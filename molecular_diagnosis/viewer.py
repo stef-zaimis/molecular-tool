@@ -108,6 +108,9 @@ def open_fasta_viewer(
     hovered_row: int | None = None
     redraw_pending = False
 
+    selection_anchor: tuple[int, int] | None = None
+    selection_active: tuple[int, int] | None = None
+
     # Keep a reference, otherwise Tk may garbage-collect the image.
     seq_canvas._viewport_image = None  # type: ignore[attr-defined]
 
@@ -241,33 +244,53 @@ def open_fasta_viewer(
             outline="",
         )
 
-        # Major labels every 10 columns.
+        # Positions are 1-based for display.
         start_pos = first_col + 1
         end_pos = last_col
 
-        first_major = start_pos
-        if first_major % 10 != 0:
-            first_major += 10 - (first_major % 10)
+        # Minor tick every 5.
+        first_minor = start_pos
+        if first_minor % 5 != 0:
+            first_minor += 5 - (first_minor % 5)
 
-        label_positions = {start_pos}
-        label_positions.update(range(first_major, end_pos + 1, 10))
-
-        for pos_1_based in sorted(label_positions):
+        for pos_1_based in range(first_minor, end_pos + 1, 5):
             col = pos_1_based - 1
             x = (col - first_col) * base_width - x_remainder + base_width / 2
 
-            if -30 <= x <= viewport_w + 30:
+            if 0 <= x <= viewport_w:
                 top_canvas.create_line(
                     x,
-                    header_height - 8,
+                    header_height - 6,
                     x,
                     header_height,
                     fill="gray",
                 )
+
+        # Major numbered tick every 10.
+        first_major = start_pos
+        if first_major % 10 != 0:
+            first_major += 10 - (first_major % 10)
+
+        for pos_1_based in range(first_major, end_pos + 1, 10):
+            col = pos_1_based - 1
+            x = (col - first_col) * base_width - x_remainder + base_width / 2
+            label = str(pos_1_based)
+
+            label_width = name_font.measure(label)
+
+            # Prevent clipped/half-visible numbers at the left and right edges.
+            if label_width / 2 <= x <= viewport_w - label_width / 2:
+                top_canvas.create_line(
+                    x,
+                    header_height - 12,
+                    x,
+                    header_height,
+                    fill="black",
+                )
                 top_canvas.create_text(
                     x,
-                    header_height - 10,
-                    text=str(pos_1_based),
+                    header_height - 14,
+                    text=label,
                     anchor="s",
                     font=name_font,
                 )
@@ -279,7 +302,7 @@ def open_fasta_viewer(
             header_height - 1,
             fill="gray",
         )
-
+        
     def draw_names(first_row: int, last_row: int, y_remainder: int) -> None:
         name_canvas.delete("all")
 
@@ -316,6 +339,20 @@ def open_fasta_viewer(
                 anchor="w",
                 font=name_bold_font if is_hovered else name_font,
             )
+
+    def selected_rectangle() -> tuple[int, int, int, int] | None:
+        if selection_anchor is None or selection_active is None:
+            return None
+
+        row_a, col_a = selection_anchor
+        row_b, col_b = selection_active
+
+        row_start = min(row_a, row_b)
+        row_end = max(row_a, row_b)
+        col_start = min(col_a, col_b)
+        col_end = max(col_a, col_b)
+
+        return row_start, row_end, col_start, col_end
 
     def render_sequence_bitmap(
         first_row: int,
@@ -369,6 +406,31 @@ def open_fasta_viewer(
                     (0, y1, viewport_w, y2),
                     outline=(0, 0, 0),
                 )
+            
+            selected = selected_rectangle()
+
+            if selected is not None:
+                row_start, row_end, col_start, col_end = selected
+
+                if row_start <= row_index <= row_end:
+                    visible_col_start = max(first_col, col_start)
+                    visible_col_end = min(last_col - 1, col_end)
+
+                    if visible_col_start <= visible_col_end:
+                        sx1 = (
+                            (visible_col_start - first_col) * base_width
+                            - x_remainder
+                        )
+                        sx2 = (
+                            (visible_col_end - first_col + 1) * base_width
+                            - x_remainder
+                        )
+
+                        draw.rectangle(
+                            (sx1, y1, sx2, y2),
+                            outline=(0, 0, 0),
+                            width=2,
+                        )
 
         return ImageTk.PhotoImage(image)
 
@@ -586,5 +648,51 @@ def open_fasta_viewer(
 
     viewer.bind("<Leave>", lambda _event: clear_hover())
 
+    def cell_from_event(event: tk.Event) -> tuple[int, int] | None:
+        row = (y_offset + event.y) // row_height
+        col = (x_offset + event.x) // base_width
+
+        if 0 <= row < n_rows and 0 <= col < seq_length:
+            return int(row), int(col)
+
+        return None
+
+    def on_press(event: tk.Event) -> str:
+        nonlocal selection_anchor, selection_active
+
+        cell = cell_from_event(event)
+
+        if cell is not None:
+            selection_anchor = cell
+            selection_active = cell
+
+            row, col = cell
+            header = headers[row]
+            base = seqs[row][col] if col < len(seqs[row]) else "-"
+
+            print(f"Clicked row={row}, header={header}, col={col + 1}, base={base}")
+
+            request_redraw()
+
+        return "break"
+
+    def on_drag(event: tk.Event) -> str:
+        nonlocal selection_active
+
+        cell = cell_from_event(event)
+
+        if cell is not None and cell != selection_active:
+            selection_active = cell
+            request_redraw()
+
+        return "break"
+
+    def on_release(event: tk.Event) -> str:
+        return "break"
+
+    seq_canvas.bind("<Button-1>", on_press)
+    seq_canvas.bind("<B1-Motion>", on_drag)
+    seq_canvas.bind("<ButtonRelease-1>", on_release)
+
     draw_corner()
-    request_redraw()
+    request_redraw() 
