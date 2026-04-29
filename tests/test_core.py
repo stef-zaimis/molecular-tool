@@ -44,7 +44,7 @@ def test_find_dmc_information() -> None:
 
     assert result.fixed_count == 4
     assert result.candidate_count == 4
-    assert 0 in result.single
+    assert result.single == [1, 3]
     assert result.pairs_tested == 6
 
 
