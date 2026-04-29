@@ -44,13 +44,16 @@ def open_fasta_viewer(
     viewer.geometry("1200x500")
 
     # Tk font for measurement and Canvas text.
-    seq_font = tkfont.Font(family="Courier New", size=10)
+    seq_font = tkfont.Font(family="Courier New", size=16)
+    seq_bold_font = seq_font.copy()
+    seq_bold_font.configure(weight="bold")
+
     name_font = tkfont.nametofont("TkDefaultFont")
     name_bold_font = name_font.copy()
     name_bold_font.configure(weight="bold")
 
-    base_width = max(7, seq_font.measure("W"))
-    row_height = max(20, seq_font.metrics("linespace") + 8)
+    base_width = max(seq_font.measure("W"), seq_bold_font.measure("W"))
+    row_height = max(36, seq_font.metrics("linespace") + 12)
 
     name_width = max(
         name_font.measure("Sequence name"),
@@ -106,6 +109,7 @@ def open_fasta_viewer(
     x_offset = 0
     y_offset = 0
     hovered_row: int | None = None
+    hovered_col: int | None = None
     redraw_pending = False
 
     selection_anchor: tuple[int, int] | None = None
@@ -378,8 +382,7 @@ def open_fasta_viewer(
             is_hovered = row_index == hovered_row
 
             if not color_bases:
-                row_fill = (242, 242, 242) if is_hovered else (255, 255, 255)
-                draw.rectangle((0, y1, viewport_w, y2), fill=row_fill)
+                draw.rectangle((0, y1, viewport_w, y2), fill=(255, 255, 255))
             else:
                 visible_seq = padded_slice(seqs[row_index], first_col, last_col)
 
@@ -401,36 +404,66 @@ def open_fasta_viewer(
                             outline=(230, 230, 230),
                         )
 
-            if is_hovered:
-                draw.rectangle(
-                    (0, y1, viewport_w, y2),
-                    outline=(0, 0, 0),
+        selected = selected_rectangle()
+
+        if selected is not None:
+            row_start, row_end, col_start, col_end = selected
+
+            visible_row_start = max(first_row, row_start)
+            visible_row_end = min(last_row - 1, row_end)
+            visible_col_start = max(first_col, col_start)
+            visible_col_end = min(last_col - 1, col_end)
+
+            if (
+                visible_row_start <= visible_row_end
+                and visible_col_start <= visible_col_end
+            ):
+                sx1 = (
+                    (visible_col_start - first_col) * base_width
+                    - x_remainder
                 )
-            
-            selected = selected_rectangle()
+                sx2 = (
+                    (visible_col_end - first_col + 1) * base_width
+                    - x_remainder
+                )
 
-            if selected is not None:
-                row_start, row_end, col_start, col_end = selected
+                sy1 = (
+                    (visible_row_start - first_row) * row_height
+                    - y_remainder
+                )
+                sy2 = (
+                    (visible_row_end - first_row + 1) * row_height
+                    - y_remainder
+                )
 
-                if row_start <= row_index <= row_end:
-                    visible_col_start = max(first_col, col_start)
-                    visible_col_end = min(last_col - 1, col_end)
+                sx1 = max(0, sx1)
+                sy1 = max(0, sy1)
+                sx2 = min(viewport_w - 1, sx2)
+                sy2 = min(viewport_h - 1, sy2)
 
-                    if visible_col_start <= visible_col_end:
-                        sx1 = (
-                            (visible_col_start - first_col) * base_width
-                            - x_remainder
-                        )
-                        sx2 = (
-                            (visible_col_end - first_col + 1) * base_width
-                            - x_remainder
-                        )
+                if hovered_col is not None and first_col <= hovered_col < last_col:
+                    hx1 = (hovered_col - first_col) * base_width - x_remainder
+                    hx2 = hx1 + base_width
 
-                        draw.rectangle(
-                            (sx1, y1, sx2, y2),
-                            outline=(0, 0, 0),
-                            width=2,
-                        )
+                    hx1 = max(0, min(viewport_w - 1, hx1))
+                    hx2 = max(0, min(viewport_w - 1, hx2))
+
+                    draw.line(
+                        (hx1, 0, hx1, viewport_h),
+                        fill=(0, 0, 0),
+                        width=2,
+                    )
+                    draw.line(
+                        (hx2, 0, hx2, viewport_h),
+                        fill=(0, 0, 0),
+                        width=2,
+                    )
+
+                draw.rectangle(
+                    (sx1, sy1, sx2, sy2),
+                    outline=(0, 0, 0),
+                    width=2,
+                )
 
         return ImageTk.PhotoImage(image)
 
@@ -445,8 +478,15 @@ def open_fasta_viewer(
         if not show_letters:
             return
 
+        line_height = seq_font.metrics("linespace")
+        y_padding = (row_height - line_height) / 2
+
         for row_index in range(first_row, last_row):
-            y = (row_index - first_row) * row_height - y_remainder + 4
+            y = (
+                (row_index - first_row) * row_height
+                - y_remainder
+                + y_padding
+            )
             x = -x_remainder
 
             visible_seq = padded_slice(seqs[row_index], first_col, last_col)
@@ -456,10 +496,10 @@ def open_fasta_viewer(
                 y,
                 text=visible_seq,
                 anchor="nw",
-                font=seq_font,
+                font=seq_bold_font if row_index == hovered_row else seq_font,
                 fill="black",
             )
-
+    
     def redraw() -> None:
         clamp_offsets()
         update_scrollbars()
@@ -550,30 +590,43 @@ def open_fasta_viewer(
     x_scroll.configure(command=xview)
     y_scroll.configure(command=yview)
 
-    def row_from_event(event: tk.Event) -> int | None:
+    def cell_from_motion_event(event: tk.Event) -> tuple[int, int] | None:
         row_index = (y_offset + event.y) // row_height
+        col_index = (x_offset + event.x) // base_width
 
-        if 0 <= row_index < n_rows:
-            return row_index
+        if 0 <= row_index < n_rows and 0 <= col_index < seq_length:
+            return int(row_index), int(col_index)
 
         return None
 
     def on_motion(event: tk.Event) -> str:
-        nonlocal hovered_row
+        nonlocal hovered_row, hovered_col
 
-        row_index = row_from_event(event)
+        cell = cell_from_motion_event(event)
 
-        if row_index != hovered_row:
+        if cell is None:
+            if hovered_row is not None or hovered_col is not None:
+                hovered_row = None
+                hovered_col = None
+                request_redraw()
+
+            return "break"
+
+        row_index, col_index = cell
+
+        if row_index != hovered_row or col_index != hovered_col:
             hovered_row = row_index
+            hovered_col = col_index
             request_redraw()
 
         return "break"
 
     def clear_hover() -> None:
-        nonlocal hovered_row
+        nonlocal hovered_row, hovered_col
 
-        if hovered_row is not None:
+        if hovered_row is not None or hovered_col is not None:
             hovered_row = None
+            hovered_col = None
             request_redraw()
 
     def wants_horizontal_scroll(event: tk.Event) -> bool:
