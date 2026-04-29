@@ -2,6 +2,8 @@ import tkinter as tk
 import tkinter.font as tkfont
 from collections.abc import Mapping
 
+from PIL import Image, ImageDraw, ImageTk
+
 from molecular_diagnosis.constants import COLORS
 
 
@@ -10,19 +12,18 @@ def open_fasta_viewer(
     sequences: Mapping[str, str],
     *,
     color_bases: bool = True,
+    show_letters: bool = True,
     show_grid: bool = False,
 ) -> None:
     """
-    Fast virtualized FASTA/alignment viewer.
+    Fast bitmap-backed FASTA/alignment viewer.
 
-    Key optimization:
-    - The canvas scrollregion represents the full alignment.
-    - Only the currently visible rows/columns are rendered.
-    - Sequence letters are drawn as one text string per visible row.
-    - Optional base background colors are drawn only for visible cells.
+    This avoids creating Canvas rectangles/text for every visible residue.
+    The sequence viewport is rendered into a single PIL image, then displayed
+    as one Canvas image item.
 
-    This is suitable for large alignments/sequences where the naive
-    create-rectangle/create-text-per-base approach becomes extremely slow.
+    This is generally faster than a normal Tkinter Canvas-grid approach,
+    especially during horizontal scrolling.
     """
 
     if not sequences:
@@ -42,24 +43,21 @@ def open_fasta_viewer(
     viewer.title("FASTA Viewer")
     viewer.geometry("1200x500")
 
-    font = tkfont.Font(family="Courier New", size=10)
-    bold_font = font.copy()
-    bold_font.configure(weight="bold")
-
+    # Tk font for measurement and Canvas text.
+    seq_font = tkfont.Font(family="Courier New", size=10)
     name_font = tkfont.nametofont("TkDefaultFont")
     name_bold_font = name_font.copy()
     name_bold_font.configure(weight="bold")
 
-    base_width = max(1, font.measure("W"))
-    row_height = max(20, font.metrics("linespace") + 8)
+    base_width = max(7, seq_font.measure("W"))
+    row_height = max(20, seq_font.metrics("linespace") + 8)
 
     name_width = max(
         name_font.measure("Sequence name"),
         max(name_font.measure(header) for header in headers),
     ) + 16
 
-    position_digits = len(str(seq_length))
-    header_height = max(34, position_digits * 9 + 14)
+    header_height = 42
 
     total_width = seq_length * base_width
     total_height = n_rows * row_height
@@ -105,20 +103,96 @@ def open_fasta_viewer(
     outer.grid_rowconfigure(1, weight=1)
     outer.grid_columnconfigure(1, weight=1)
 
-    for canvas in (top_canvas, name_canvas, seq_canvas):
-        canvas.configure(borderwidth=0)
-
-    top_canvas.configure(scrollregion=(0, 0, total_width, header_height))
-    name_canvas.configure(scrollregion=(0, 0, name_width, total_height))
-    seq_canvas.configure(scrollregion=(0, 0, total_width, total_height))
-
-    # Makes wheel/keyboard scrolling align naturally to residues/rows.
-    seq_canvas.configure(xscrollincrement=base_width, yscrollincrement=row_height)
-    top_canvas.configure(xscrollincrement=base_width)
-    name_canvas.configure(yscrollincrement=row_height)
-
+    x_offset = 0
+    y_offset = 0
     hovered_row: int | None = None
     redraw_pending = False
+
+    # Keep a reference, otherwise Tk may garbage-collect the image.
+    seq_canvas._viewport_image = None  # type: ignore[attr-defined]
+
+    color_cache: dict[str, tuple[int, int, int]] = {}
+
+    def parse_color(base: str) -> tuple[int, int, int]:
+        base = base.upper()
+
+        if base in color_cache:
+            return color_cache[base]
+
+        hex_color = COLORS.get(base, "FFFFFF").lstrip("#")
+
+        if len(hex_color) != 6:
+            rgb = (255, 255, 255)
+        else:
+            try:
+                rgb = (
+                    int(hex_color[0:2], 16),
+                    int(hex_color[2:4], 16),
+                    int(hex_color[4:6], 16),
+                )
+            except ValueError:
+                rgb = (255, 255, 255)
+
+        color_cache[base] = rgb
+        return rgb
+
+    def clamp_offsets() -> None:
+        nonlocal x_offset, y_offset
+
+        viewport_w = max(1, seq_canvas.winfo_width())
+        viewport_h = max(1, seq_canvas.winfo_height())
+
+        max_x = max(0, total_width - viewport_w)
+        max_y = max(0, total_height - viewport_h)
+
+        x_offset = min(max(0, x_offset), max_x)
+        y_offset = min(max(0, y_offset), max_y)
+
+    def update_scrollbars() -> None:
+        viewport_w = max(1, seq_canvas.winfo_width())
+        viewport_h = max(1, seq_canvas.winfo_height())
+
+        if total_width <= 0:
+            x_scroll.set(0, 1)
+        else:
+            first = x_offset / total_width
+            last = min(1, (x_offset + viewport_w) / total_width)
+            x_scroll.set(first, last)
+
+        if total_height <= 0:
+            y_scroll.set(0, 1)
+        else:
+            first = y_offset / total_height
+            last = min(1, (y_offset + viewport_h) / total_height)
+            y_scroll.set(first, last)
+
+    def visible_range() -> tuple[int, int, int, int, int, int]:
+        viewport_w = max(1, seq_canvas.winfo_width())
+        viewport_h = max(1, seq_canvas.winfo_height())
+
+        first_col = max(0, x_offset // base_width)
+        last_col = min(seq_length, (x_offset + viewport_w) // base_width + 2)
+
+        first_row = max(0, y_offset // row_height)
+        last_row = min(n_rows, (y_offset + viewport_h) // row_height + 2)
+
+        x_remainder = x_offset - first_col * base_width
+        y_remainder = y_offset - first_row * row_height
+
+        return first_row, last_row, first_col, last_col, x_remainder, y_remainder
+
+    def padded_slice(sequence: str, first_col: int, last_col: int) -> str:
+        wanted = last_col - first_col
+
+        if first_col >= len(sequence):
+            return "-" * wanted
+
+        segment = sequence[first_col:last_col]
+
+        if len(segment) < wanted:
+            segment += "-" * (wanted - len(segment))
+
+        return segment
 
     def request_redraw() -> None:
         nonlocal redraw_pending
@@ -128,36 +202,12 @@ def open_fasta_viewer(
 
         redraw_pending = True
 
-        def _do_redraw() -> None:
+        def _redraw() -> None:
             nonlocal redraw_pending
             redraw_pending = False
             redraw()
 
-        viewer.after_idle(_do_redraw)
-
-    def sync_y_scrollbar(first: str, last: str) -> None:
-        y_scroll.set(first, last)
-
-    def sync_x_scrollbar(first: str, last: str) -> None:
-        x_scroll.set(first, last)
-
-    seq_canvas.configure(
-        xscrollcommand=sync_x_scrollbar,
-        yscrollcommand=sync_y_scrollbar,
-    )
-
-    def yview(*args: object) -> None:
-        name_canvas.yview(*args)
-        seq_canvas.yview(*args)
-        request_redraw()
-
-    def xview(*args: object) -> None:
-        top_canvas.xview(*args)
-        seq_canvas.xview(*args)
-        request_redraw()
-
-    y_scroll.configure(command=yview)
-    x_scroll.configure(command=xview)
+        viewer.after_idle(_redraw)
 
     def draw_corner() -> None:
         corner_canvas.delete("all")
@@ -177,106 +227,79 @@ def open_fasta_viewer(
             font=name_bold_font,
         )
 
-    def visible_range() -> tuple[int, int, int, int]:
-        x0 = max(0, int(seq_canvas.canvasx(0)))
-        y0 = max(0, int(seq_canvas.canvasy(0)))
-
-        width = max(1, seq_canvas.winfo_width())
-        height = max(1, seq_canvas.winfo_height())
-
-        first_col = max(0, x0 // base_width)
-        last_col = min(seq_length, (x0 + width) // base_width + 2)
-
-        first_row = max(0, y0 // row_height)
-        last_row = min(n_rows, (y0 + height) // row_height + 2)
-
-        return first_row, last_row, first_col, last_col
-
-    def padded_slice(sequence: str, first_col: int, last_col: int) -> str:
-        wanted = last_col - first_col
-
-        if first_col >= len(sequence):
-            return "-" * wanted
-
-        segment = sequence[first_col:last_col]
-
-        if len(segment) < wanted:
-            segment += "-" * (wanted - len(segment))
-
-        return segment
-
-    def base_fill(base: str) -> str:
-        return "#" + COLORS.get(base.upper(), "FFFFFF")
-
-    def draw_header(first_col: int, last_col: int) -> None:
+    def draw_header(first_col: int, last_col: int, x_remainder: int) -> None:
         top_canvas.delete("all")
 
-        x_left = first_col * base_width
-        x_right = last_col * base_width
+        viewport_w = max(1, top_canvas.winfo_width())
 
         top_canvas.create_rectangle(
-            x_left,
             0,
-            x_right,
+            0,
+            viewport_w,
             header_height,
             fill="white",
             outline="",
         )
 
-        # Draw a label every 10 columns, plus first visible column.
-        # Drawing every single position label is possible but visually noisy.
-        start = first_col + 1
-        end = last_col
+        # Major labels every 10 columns.
+        start_pos = first_col + 1
+        end_pos = last_col
 
-        first_labeled = start
-        if first_labeled % 10 != 0:
-            first_labeled += 10 - (first_labeled % 10)
+        first_major = start_pos
+        if first_major % 10 != 0:
+            first_major += 10 - (first_major % 10)
 
-        label_positions = {start}
-        label_positions.update(range(first_labeled, end + 1, 10))
+        label_positions = {start_pos}
+        label_positions.update(range(first_major, end_pos + 1, 10))
 
         for pos_1_based in sorted(label_positions):
             col = pos_1_based - 1
-            x = col * base_width + base_width / 2
+            x = (col - first_col) * base_width - x_remainder + base_width / 2
 
-            top_canvas.create_line(
-                x,
-                header_height - 8,
-                x,
-                header_height,
-                fill="gray",
-            )
-            top_canvas.create_text(
-                x,
-                header_height - 10,
-                text=str(pos_1_based),
-                anchor="s",
-                font=name_font,
-            )
-
-        if show_grid:
-            for col in range(first_col, last_col + 1):
-                x = col * base_width
-                top_canvas.create_line(x, 0, x, header_height, fill="#e6e6e6")
+            if -30 <= x <= viewport_w + 30:
+                top_canvas.create_line(
+                    x,
+                    header_height - 8,
+                    x,
+                    header_height,
+                    fill="gray",
+                )
+                top_canvas.create_text(
+                    x,
+                    header_height - 10,
+                    text=str(pos_1_based),
+                    anchor="s",
+                    font=name_font,
+                )
 
         top_canvas.create_line(
-            x_left,
+            0,
             header_height - 1,
-            x_right,
+            viewport_w,
             header_height - 1,
             fill="gray",
         )
 
-    def draw_names(first_row: int, last_row: int) -> None:
+    def draw_names(first_row: int, last_row: int, y_remainder: int) -> None:
         name_canvas.delete("all")
 
-        for row_index in range(first_row, last_row):
-            y1 = row_index * row_height
-            y2 = y1 + row_height
-            is_hovered = row_index == hovered_row
+        viewport_h = max(1, name_canvas.winfo_height())
 
+        name_canvas.create_rectangle(
+            0,
+            0,
+            name_width,
+            viewport_h,
+            fill="white",
+            outline="",
+        )
+
+        for row_index in range(first_row, last_row):
+            y1 = (row_index - first_row) * row_height - y_remainder
+            y2 = y1 + row_height
+
+            is_hovered = row_index == hovered_row
             fill = "#f2f2f2" if is_hovered else "white"
-            font_to_use = name_bold_font if is_hovered else name_font
 
             name_canvas.create_rectangle(
                 0,
@@ -291,94 +314,192 @@ def open_fasta_viewer(
                 y1 + row_height / 2,
                 text=headers[row_index],
                 anchor="w",
-                font=font_to_use,
+                font=name_bold_font if is_hovered else name_font,
             )
 
-    def draw_sequences(
+    def render_sequence_bitmap(
         first_row: int,
         last_row: int,
         first_col: int,
         last_col: int,
-    ) -> None:
-        seq_canvas.delete("all")
+        x_remainder: int,
+        y_remainder: int,
+    ) -> ImageTk.PhotoImage:
+        viewport_w = max(1, seq_canvas.winfo_width())
+        viewport_h = max(1, seq_canvas.winfo_height())
 
-        x_start = first_col * base_width
-        x_end = last_col * base_width
+        image = Image.new("RGB", (viewport_w, viewport_h), "white")
+        draw = ImageDraw.Draw(image)
 
         for row_index in range(first_row, last_row):
-            y1 = row_index * row_height
+            y1 = (row_index - first_row) * row_height - y_remainder
             y2 = y1 + row_height
+
+            if y2 < 0 or y1 > viewport_h:
+                continue
+
             is_hovered = row_index == hovered_row
+
+            if not color_bases:
+                row_fill = (242, 242, 242) if is_hovered else (255, 255, 255)
+                draw.rectangle((0, y1, viewport_w, y2), fill=row_fill)
+            else:
+                visible_seq = padded_slice(seqs[row_index], first_col, last_col)
+
+                for offset, base in enumerate(visible_seq):
+                    x1 = offset * base_width - x_remainder
+                    x2 = x1 + base_width
+
+                    if x2 < 0 or x1 > viewport_w:
+                        continue
+
+                    draw.rectangle(
+                        (x1, y1, x2, y2),
+                        fill=parse_color(base),
+                    )
+
+                    if show_grid:
+                        draw.rectangle(
+                            (x1, y1, x2, y2),
+                            outline=(230, 230, 230),
+                        )
+
+            if is_hovered:
+                draw.rectangle(
+                    (0, y1, viewport_w, y2),
+                    outline=(0, 0, 0),
+                )
+
+        return ImageTk.PhotoImage(image)
+
+    def draw_sequence_letters(
+        first_row: int,
+        last_row: int,
+        first_col: int,
+        last_col: int,
+        x_remainder: int,
+        y_remainder: int,
+    ) -> None:
+        if not show_letters:
+            return
+
+        for row_index in range(first_row, last_row):
+            y = (row_index - first_row) * row_height - y_remainder + 4
+            x = -x_remainder
 
             visible_seq = padded_slice(seqs[row_index], first_col, last_col)
 
-            if color_bases:
-                for offset, base in enumerate(visible_seq):
-                    x1 = (first_col + offset) * base_width
-                    x2 = x1 + base_width
-
-                    seq_canvas.create_rectangle(
-                        x1,
-                        y1,
-                        x2,
-                        y2,
-                        fill=base_fill(base),
-                        outline="#e6e6e6" if show_grid else "",
-                    )
-            else:
-                seq_canvas.create_rectangle(
-                    x_start,
-                    y1,
-                    x_end,
-                    y2,
-                    fill="#f2f2f2" if is_hovered else "white",
-                    outline="",
-                )
-
-            if is_hovered:
-                seq_canvas.create_rectangle(
-                    x_start,
-                    y1,
-                    x_end,
-                    y2,
-                    outline="black",
-                    width=1,
-                )
-
             seq_canvas.create_text(
-                x_start,
-                y1 + 4,
+                x,
+                y,
                 text=visible_seq,
                 anchor="nw",
-                font=bold_font if is_hovered else font,
+                font=seq_font,
                 fill="black",
             )
 
-        if show_grid:
-            for row_index in range(first_row, last_row + 1):
-                y = row_index * row_height
-                seq_canvas.create_line(x_start, y, x_end, y, fill="#e6e6e6")
-
     def redraw() -> None:
-        first_row, last_row, first_col, last_col = visible_range()
+        clamp_offsets()
+        update_scrollbars()
 
-        draw_header(first_col, last_col)
-        draw_names(first_row, last_row)
-        draw_sequences(first_row, last_row, first_col, last_col)
+        (
+            first_row,
+            last_row,
+            first_col,
+            last_col,
+            x_remainder,
+            y_remainder,
+        ) = visible_range()
 
-    def row_from_event(canvas: tk.Canvas, event: tk.Event) -> int | None:
-        y = int(canvas.canvasy(event.y))
-        row_index = y // row_height
+        draw_header(first_col, last_col, x_remainder)
+        draw_names(first_row, last_row, y_remainder)
+
+        seq_canvas.delete("all")
+
+        photo = render_sequence_bitmap(
+            first_row,
+            last_row,
+            first_col,
+            last_col,
+            x_remainder,
+            y_remainder,
+        )
+
+        seq_canvas._viewport_image = photo  # type: ignore[attr-defined]
+        seq_canvas.create_image(0, 0, image=photo, anchor="nw")
+
+        # Text is still Canvas text, but only one item per visible row,
+        # not one item per base.
+        draw_sequence_letters(
+            first_row,
+            last_row,
+            first_col,
+            last_col,
+            x_remainder,
+            y_remainder,
+        )
+
+    def xview(*args: object) -> None:
+        nonlocal x_offset
+
+        if not args:
+            return
+
+        command = args[0]
+
+        if command == "moveto":
+            fraction = float(args[1])
+            x_offset = int(fraction * total_width)
+
+        elif command == "scroll":
+            amount = int(args[1])
+            unit = str(args[2])
+
+            if unit == "pages":
+                x_offset += amount * max(1, seq_canvas.winfo_width() - base_width)
+            else:
+                x_offset += amount * base_width * 5
+
+        request_redraw()
+
+    def yview(*args: object) -> None:
+        nonlocal y_offset
+
+        if not args:
+            return
+
+        command = args[0]
+
+        if command == "moveto":
+            fraction = float(args[1])
+            y_offset = int(fraction * total_height)
+
+        elif command == "scroll":
+            amount = int(args[1])
+            unit = str(args[2])
+
+            if unit == "pages":
+                y_offset += amount * max(1, seq_canvas.winfo_height() - row_height)
+            else:
+                y_offset += amount * row_height * 3
+
+        request_redraw()
+
+    x_scroll.configure(command=xview)
+    y_scroll.configure(command=yview)
+
+    def row_from_event(event: tk.Event) -> int | None:
+        row_index = (y_offset + event.y) // row_height
 
         if 0 <= row_index < n_rows:
             return row_index
 
         return None
 
-    def on_row_motion(canvas: tk.Canvas, event: tk.Event) -> str:
+    def on_motion(event: tk.Event) -> str:
         nonlocal hovered_row
 
-        row_index = row_from_event(canvas, event)
+        row_index = row_from_event(event)
 
         if row_index != hovered_row:
             hovered_row = row_index
@@ -393,17 +514,10 @@ def open_fasta_viewer(
             hovered_row = None
             request_redraw()
 
-    def scroll_vertical(units: int) -> None:
-        name_canvas.yview_scroll(units, "units")
-        seq_canvas.yview_scroll(units, "units")
-        clear_hover()
-        request_redraw()
-
-    def scroll_horizontal(units: int) -> None:
-        top_canvas.xview_scroll(units, "units")
-        seq_canvas.xview_scroll(units, "units")
-        clear_hover()
-        request_redraw()
+    def wants_horizontal_scroll(event: tk.Event) -> bool:
+        shift_pressed = bool(event.state & 0x0001)
+        ctrl_pressed = bool(event.state & 0x0004)
+        return shift_pressed or ctrl_pressed
 
     def wheel_units(event: tk.Event) -> int:
         delta = getattr(event, "delta", 0)
@@ -416,47 +530,49 @@ def open_fasta_viewer(
 
         return -1 if delta > 0 else 1
 
-    def wants_horizontal_scroll(event: tk.Event) -> bool:
-        # Shift is standard horizontal scroll on many systems.
-        # Ctrl is kept because your original implementation used it.
-        shift_pressed = bool(event.state & 0x0001)
-        ctrl_pressed = bool(event.state & 0x0004)
-        return shift_pressed or ctrl_pressed
-
     def on_mousewheel(event: tk.Event) -> str:
+        nonlocal x_offset, y_offset
+
         units = wheel_units(event)
 
         if units == 0:
             return "break"
 
         if wants_horizontal_scroll(event):
-            scroll_horizontal(units * 3)
+            x_offset += units * base_width * 8
         else:
-            scroll_vertical(units * 3)
+            y_offset += units * row_height * 3
 
+        request_redraw()
         return "break"
 
     def on_linux_scroll_up(event: tk.Event) -> str:
-        if wants_horizontal_scroll(event):
-            scroll_horizontal(-3)
-        else:
-            scroll_vertical(-3)
+        nonlocal x_offset, y_offset
 
+        if wants_horizontal_scroll(event):
+            x_offset -= base_width * 8
+        else:
+            y_offset -= row_height * 3
+
+        request_redraw()
         return "break"
 
     def on_linux_scroll_down(event: tk.Event) -> str:
-        if wants_horizontal_scroll(event):
-            scroll_horizontal(3)
-        else:
-            scroll_vertical(3)
+        nonlocal x_offset, y_offset
 
+        if wants_horizontal_scroll(event):
+            x_offset += base_width * 8
+        else:
+            y_offset += row_height * 3
+
+        request_redraw()
         return "break"
 
     def on_configure(_event: tk.Event) -> None:
         request_redraw()
 
-    name_canvas.bind("<Motion>", lambda event: on_row_motion(name_canvas, event))
-    seq_canvas.bind("<Motion>", lambda event: on_row_motion(seq_canvas, event))
+    seq_canvas.bind("<Motion>", on_motion)
+    name_canvas.bind("<Motion>", on_motion)
 
     for canvas in (corner_canvas, top_canvas, name_canvas, seq_canvas):
         canvas.bind("<MouseWheel>", on_mousewheel)
