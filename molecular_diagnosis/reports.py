@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from molecular_diagnosis.core import format_diag
-from molecular_diagnosis.models import DMCResult, FiveSiteResult
+from molecular_diagnosis.models import DMCResult, FiveSiteResult, PunishmentResult
 
 
 def write_text_report(
@@ -16,6 +16,7 @@ def write_text_report(
     ref_id: str,
     dmc: DMCResult,
     five_site_result: FiveSiteResult,
+    punishment_result: PunishmentResult | None = None,
 ) -> None:
     output_path = Path(output_path)
     ref_seq = sequences[ref_id]
