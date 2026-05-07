@@ -11,6 +11,7 @@ from molecular_diagnosis.fasta_io import (
 from molecular_diagnosis.models import PipelineResult
 from molecular_diagnosis.reports import write_text_report
 from molecular_diagnosis.utils import next_available_filename
+from molecular_diagnosis.punishments import find_focal_punishments
 
 
 def run_pipeline_core(
@@ -51,6 +52,19 @@ def run_pipeline_core(
         target_string=target_string,
     )
 
+    punishment_result = find_focal_punishments(
+        sequences=sequences,
+        focal_headers=focal_headers,
+    )
+
+    print("\nFocal punishment scores:")
+    for sequence_id, total_score in sorted(
+        punishment_result.total_scores.items(),
+        key=lambda item: (-item[1], item[0]),
+    ):
+        print(f"{sequence_id}\t{total_score:.3f}")
+    print()
+
     ref_id = focal_headers[0]
 
     dmc = find_dmc_information(
@@ -80,6 +94,7 @@ def run_pipeline_core(
         ref_id=ref_id,
         dmc=dmc,
         five_site_result=five_site_result,
+        punishment_result=punishment_result,
     )
 
     write_excel_report(

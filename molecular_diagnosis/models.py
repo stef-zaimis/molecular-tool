@@ -22,6 +22,29 @@ class FiveSiteResult:
     best_avg_score: float | None
     best_avg_sites: tuple[int, ...] | None
 
+@dataclass(frozen=True)
+class PunishmentEvent:
+    sequence_id: str
+    site: int
+    state: str
+    category: str
+    score: float
+    empty_fraction: float
+    direction: str | None = None
+    note: str = ""
+
+
+@dataclass(frozen=True)
+class PunishmentResult:
+    total_scores: dict[str, float]
+    polymorphism_scores: dict[str, float]
+    balancing_scores: dict[str, float]
+    prolongation_scores: dict[str, float]
+    insertion_scores: dict[str, float]
+    bd_counts: dict[str, int]
+    prl_counts: dict[str, int]
+    ins_counts: dict[str, int]
+    events: list[PunishmentEvent]
 
 @dataclass(frozen=True)
 class PipelineResult:
