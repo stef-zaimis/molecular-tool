@@ -28,3 +28,15 @@ IUPAC = {
 }
 
 STRICT_BASES = {"A", "C", "G", "T"}
+
+# Focal punishment / anomaly scoring thresholds.
+# Practical boundary convention:
+#   empty_fraction < 1/3      -> polymorphism
+#   1/3 <= empty_fraction < 2/3 -> balancing
+#   empty_fraction >= 2/3     -> prolongation/insertion logic
+POLYMORPHISM_EMPTY_LIMIT = 1 / 3
+BALANCING_EMPTY_LIMIT = 2 / 3
+
+POLYMORPHISM_EMPTY_WEIGHT = 0.20
+BALANCING_EMPTY_WEIGHT = 0.10
+PROLONGATION_WEIGHT = 0.10
