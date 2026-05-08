@@ -8,17 +8,25 @@ from molecular_diagnosis.fasta_io import (
     split_focal_headers,
     validate_aligned_fasta,
 )
-from molecular_diagnosis.models import PipelineResult
+from molecular_diagnosis.models import PipelineResult, PunishmentResult
 from molecular_diagnosis.reports import write_text_report
 from molecular_diagnosis.utils import next_available_filename
 from molecular_diagnosis.punishments import find_focal_punishments
 
 
-def run_pipeline_core(
+def load_inputs(
     fasta_path: str | Path,
     target_string: str,
     output_dir: str | Path,
-) -> PipelineResult:
+) -> tuple[
+    Path,
+    str,
+    Path,
+    dict[str, str],
+    int,
+    list[str],
+    list[str],
+]:
     fasta_path = Path(str(fasta_path).strip())
     target_string = str(target_string).strip()
     output_dir = Path(str(output_dir).strip())
@@ -52,18 +60,35 @@ def run_pipeline_core(
         target_string=target_string,
     )
 
-    punishment_result = find_focal_punishments(
-        sequences=sequences,
-        focal_headers=focal_headers,
+    return (
+        fasta_path,
+        target_string,
+        output_dir,
+        sequences,
+        alignment_length,
+        focal_headers,
+        non_focal_headers,
     )
 
-    print("\nFocal punishment scores:")
-    for sequence_id, total_score in sorted(
-        punishment_result.total_scores.items(),
-        key=lambda item: (-item[1], item[0]),
-    ):
-        print(f"{sequence_id}\t{total_score:.3f}")
-    print()
+
+def run_pipeline_core(
+    fasta_path: str | Path,
+    target_string: str,
+    output_dir: str | Path,
+) -> PipelineResult:
+    (
+        fasta_path,
+        target_string,
+        output_dir,
+        sequences,
+        alignment_length,
+        focal_headers,
+        non_focal_headers,
+    ) = load_inputs(
+        fasta_path=fasta_path,
+        target_string=target_string,
+        output_dir=output_dir,
+    )
 
     ref_id = focal_headers[0]
 
@@ -94,7 +119,7 @@ def run_pipeline_core(
         ref_id=ref_id,
         dmc=dmc,
         five_site_result=five_site_result,
-        punishment_result=punishment_result,
+        punishment_result=None,
     )
 
     write_excel_report(
@@ -110,4 +135,29 @@ def run_pipeline_core(
     return PipelineResult(
         txt_output_path=txt_output_path,
         xlsx_output_path=xlsx_output_path,
+    )
+
+
+def run_punishment_core(
+    fasta_path: str | Path,
+    target_string: str,
+    output_dir: str | Path,
+) -> PunishmentResult:
+    (
+        _fasta_path,
+        _target_string,
+        _output_dir,
+        sequences,
+        _alignment_length,
+        focal_headers,
+        _non_focal_headers,
+    ) = load_inputs(
+        fasta_path=fasta_path,
+        target_string=target_string,
+        output_dir=output_dir,
+    )
+
+    return find_focal_punishments(
+        sequences=sequences,
+        focal_headers=focal_headers,
     )
