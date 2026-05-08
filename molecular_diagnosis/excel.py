@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill
+from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.worksheet.worksheet import Worksheet
 
 from molecular_diagnosis.constants import COLORS
@@ -10,6 +10,8 @@ from molecular_diagnosis.core import (
     compute_similarity,
     extract_sites,
 )
+
+from molecular_diagnosis.models import PunishmentResult
 
 
 def autosize_columns(ws: Worksheet) -> None:
@@ -129,5 +131,93 @@ def write_excel_report(
             sites=best_avg_sites,
             target_string=target_string,
         )
+
+    workbook.save(output_path)
+
+def write_punishment_excel_report(
+    output_path: str | Path,
+    focal_headers: list[str],
+    alignment_length: int,
+    punishment_result: PunishmentResult,
+) -> None:
+    workbook = Workbook()
+    ws = workbook.active
+    ws.title = "Punishments"
+
+    header = [
+        "ID",
+        "PS",
+        "PS/bp",
+        "BD",
+        "INS",
+        "PRL",
+        "POLY_PS",
+        "BAL_PS",
+        "INS_PS",
+        "PRL_PS",
+    ]
+
+    ws.append(header)
+
+    header_fill = PatternFill(
+        start_color="595959",
+        end_color="595959",
+        fill_type="solid",
+    )
+
+    for cell in ws[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center")
+
+    ws.freeze_panes = "B2"
+    ws.auto_filter.ref = f"A1:J{len(focal_headers) + 1}"
+
+    sorted_headers = sorted(
+        focal_headers,
+        key=lambda sequence_id: (
+            -punishment_result.total_scores.get(sequence_id, 0.0),
+            sequence_id,
+        ),
+    )
+
+    for sequence_id in sorted_headers:
+        total_score = punishment_result.total_scores.get(sequence_id, 0.0)
+
+        if alignment_length > 0:
+            score_per_bp = total_score / alignment_length
+        else:
+            score_per_bp = 0.0
+
+        ws.append(
+            [
+                sequence_id,
+                total_score,
+                score_per_bp,
+                punishment_result.bd_counts.get(sequence_id, 0),
+                punishment_result.ins_counts.get(sequence_id, 0),
+                punishment_result.prl_counts.get(sequence_id, 0),
+                punishment_result.polymorphism_scores.get(sequence_id, 0.0),
+                punishment_result.balancing_scores.get(sequence_id, 0.0),
+                punishment_result.insertion_scores.get(sequence_id, 0.0),
+                punishment_result.prolongation_scores.get(sequence_id, 0.0),
+            ]
+        )
+
+    for row in ws.iter_rows(min_row=2):
+        row[1].number_format = "0.000"
+        row[2].number_format = "0.000000"
+        row[3].number_format = "0"
+        row[4].number_format = "0"
+        row[5].number_format = "0"
+        row[6].number_format = "0.000"
+        row[7].number_format = "0.000"
+        row[8].number_format = "0.000"
+        row[9].number_format = "0.000"
+
+        for cell in row[1:]:
+            cell.alignment = Alignment(horizontal="center")
+
+    autosize_columns(ws)
 
     workbook.save(output_path)

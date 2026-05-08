@@ -22,6 +22,7 @@ class FiveSiteResult:
     best_avg_score: float | None
     best_avg_sites: tuple[int, ...] | None
 
+
 @dataclass(frozen=True)
 class PunishmentEvent:
     sequence_id: str
@@ -33,7 +34,7 @@ class PunishmentEvent:
     direction: str | None = None
     note: str = ""
 
-
+    
 @dataclass(frozen=True)
 class PunishmentResult:
     total_scores: dict[str, float]
@@ -45,6 +46,12 @@ class PunishmentResult:
     prl_counts: dict[str, int]
     ins_counts: dict[str, int]
     events: list[PunishmentEvent]
+
+
+@dataclass(frozen=True)
+class PunishmentPipelineResult:
+    xlsx_output_path: Path
+    
 
 @dataclass(frozen=True)
 class PipelineResult:

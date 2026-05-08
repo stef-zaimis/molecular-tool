@@ -1,36 +1,51 @@
 from pathlib import Path
 
-from molecular_diagnosis.constants import TXT_OUTPUT_BASENAME, XLSX_OUTPUT_BASENAME
+from molecular_diagnosis.constants import (
+    PUNISHMENT_XLSX_OUTPUT_BASENAME,
+    TXT_OUTPUT_BASENAME,
+    XLSX_OUTPUT_BASENAME,
+)
 from molecular_diagnosis.core import find_best_five_site_sets, find_dmc_information
-from molecular_diagnosis.excel import write_excel_report
+from molecular_diagnosis.excel import write_excel_report, write_punishment_excel_report
 from molecular_diagnosis.fasta_io import (
     parse_fasta,
     split_focal_headers,
     validate_aligned_fasta,
 )
-from molecular_diagnosis.models import PipelineResult
+from molecular_diagnosis.models import PipelineResult, PunishmentPipelineResult
+from molecular_diagnosis.punishments import find_focal_punishments
 from molecular_diagnosis.reports import write_text_report
 from molecular_diagnosis.utils import next_available_filename
-from molecular_diagnosis.punishments import find_focal_punishments
 
 
-def run_pipeline_core(
+def load_inputs(
     fasta_path: str | Path,
     target_string: str,
     output_dir: str | Path,
-) -> PipelineResult:
-    fasta_path = Path(str(fasta_path).strip())
+) -> tuple[
+    Path,
+    str,
+    Path,
+    dict[str, str],
+    int,
+    list[str],
+    list[str],
+]:
+    fasta_path_text = str(fasta_path).strip()
     target_string = str(target_string).strip()
-    output_dir = Path(str(output_dir).strip())
+    output_dir_text = str(output_dir).strip()
 
-    if not str(fasta_path):
+    if not fasta_path_text:
         raise ValueError("No FASTA file selected.")
 
     if not target_string:
         raise ValueError("No identifier string entered.")
 
-    if not str(output_dir):
+    if not output_dir_text:
         raise ValueError("No output directory selected.")
+
+    fasta_path = Path(fasta_path_text)
+    output_dir = Path(output_dir_text)
 
     if not fasta_path.exists():
         raise ValueError("FASTA file does not exist.")
@@ -52,18 +67,35 @@ def run_pipeline_core(
         target_string=target_string,
     )
 
-    punishment_result = find_focal_punishments(
-        sequences=sequences,
-        focal_headers=focal_headers,
+    return (
+        fasta_path,
+        target_string,
+        output_dir,
+        sequences,
+        alignment_length,
+        focal_headers,
+        non_focal_headers,
     )
 
-    print("\nFocal punishment scores:")
-    for sequence_id, total_score in sorted(
-        punishment_result.total_scores.items(),
-        key=lambda item: (-item[1], item[0]),
-    ):
-        print(f"{sequence_id}\t{total_score:.3f}")
-    print()
+
+def run_pipeline_core(
+    fasta_path: str | Path,
+    target_string: str,
+    output_dir: str | Path,
+) -> PipelineResult:
+    (
+        fasta_path,
+        target_string,
+        output_dir,
+        sequences,
+        alignment_length,
+        focal_headers,
+        non_focal_headers,
+    ) = load_inputs(
+        fasta_path=fasta_path,
+        target_string=target_string,
+        output_dir=output_dir,
+    )
 
     ref_id = focal_headers[0]
 
@@ -94,7 +126,7 @@ def run_pipeline_core(
         ref_id=ref_id,
         dmc=dmc,
         five_site_result=five_site_result,
-        punishment_result=punishment_result,
+        punishment_result=None,
     )
 
     write_excel_report(
@@ -109,5 +141,45 @@ def run_pipeline_core(
 
     return PipelineResult(
         txt_output_path=txt_output_path,
+        xlsx_output_path=xlsx_output_path,
+    )
+
+
+def run_punishment_core(
+    fasta_path: str | Path,
+    target_string: str,
+    output_dir: str | Path,
+) -> PunishmentPipelineResult:
+    (
+        _fasta_path,
+        _target_string,
+        output_dir,
+        sequences,
+        alignment_length,
+        focal_headers,
+        _non_focal_headers,
+    ) = load_inputs(
+        fasta_path=fasta_path,
+        target_string=target_string,
+        output_dir=output_dir,
+    )
+
+    punishment_result = find_focal_punishments(
+        sequences=sequences,
+        focal_headers=focal_headers,
+    )
+
+    xlsx_output_path = next_available_filename(
+        output_dir / PUNISHMENT_XLSX_OUTPUT_BASENAME
+    )
+
+    write_punishment_excel_report(
+        output_path=xlsx_output_path,
+        focal_headers=focal_headers,
+        alignment_length=alignment_length,
+        punishment_result=punishment_result,
+    )
+
+    return PunishmentPipelineResult(
         xlsx_output_path=xlsx_output_path,
     )

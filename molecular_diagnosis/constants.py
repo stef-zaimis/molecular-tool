@@ -1,5 +1,6 @@
 TXT_OUTPUT_BASENAME = "DMCs_output.txt"
 XLSX_OUTPUT_BASENAME = "comparison_output.xlsx"
+PUNISHMENT_XLSX_OUTPUT_BASENAME = "punishment_output.xlsx"
 
 COLORS = {
     "A": "90EE90",

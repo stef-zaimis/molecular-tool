@@ -3,14 +3,14 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 
 from molecular_diagnosis.fasta_io import parse_fasta
-from molecular_diagnosis.pipeline import run_pipeline_core
+from molecular_diagnosis.pipeline import run_pipeline_core, run_punishment_core
 from molecular_diagnosis.viewer import open_fasta_viewer
 
 
 def launch_gui() -> None:
     root = tk.Tk()
     root.title("Molecular Diagnosis Tool")
-    root.geometry("650x360")
+    root.geometry("650x390")
 
     fasta_var = tk.StringVar()
     target_var = tk.StringVar()
@@ -109,6 +109,39 @@ def launch_gui() -> None:
         except Exception as error:
             messagebox.showerror("Error", str(error))
 
+    def run_punishments() -> None:
+        fasta_path = fasta_var.get().strip()
+        target_string = target_var.get().strip()
+        output_dir = output_dir_var.get().strip()
+
+        if not fasta_path:
+            messagebox.showerror("Error", "Please select a FASTA file.")
+            return
+
+        if not target_string:
+            messagebox.showerror("Error", "Please enter an identifier string.")
+            return
+
+        if not output_dir:
+            messagebox.showerror("Error", "Please select an output directory.")
+            return
+
+        try:
+            result = run_punishment_core(
+                fasta_path=fasta_path,
+                target_string=target_string,
+                output_dir=output_dir,
+            )
+
+            messagebox.showinfo(
+                "Done",
+                f"Punishment analysis completed.\n\n"
+                f"Excel output:\n{result.xlsx_output_path}",
+            )
+
+        except Exception as error:
+            messagebox.showerror("Error", str(error))
+
     tk.Label(root, text="Aligned FASTA file").pack(pady=(10, 0))
     tk.Entry(root, textvariable=fasta_var, width=80).pack(padx=10)
 
@@ -150,6 +183,19 @@ def launch_gui() -> None:
         command=use_fasta_location,
     ).grid(row=0, column=2, padx=5)
 
-    tk.Button(root, text="Run", command=run).pack(pady=15)
+    action_frame = tk.Frame(root)
+    action_frame.pack(pady=15)
+
+    tk.Button(
+        action_frame,
+        text="Run DMC Analysis",
+        command=run,
+    ).grid(row=0, column=0, padx=5)
+
+    tk.Button(
+        action_frame,
+        text="Run Punishment Analysis",
+        command=run_punishments,
+    ).grid(row=0, column=1, padx=5)
 
     root.mainloop()
