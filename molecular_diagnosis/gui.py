@@ -6,6 +6,51 @@ from molecular_diagnosis.fasta_io import parse_fasta
 from molecular_diagnosis.pipeline import run_pipeline_core, run_punishment_core
 from molecular_diagnosis.viewer import open_fasta_viewer
 
+def run_punishments() -> None:
+        fasta_path = fasta_var.get().strip()
+        target_string = target_var.get().strip()
+        output_dir = output_dir_var.get().strip()
+
+        if not fasta_path:
+            messagebox.showerror("Error", "Please select a FASTA file.")
+            return
+
+        if not target_string:
+            messagebox.showerror("Error", "Please enter an identifier string.")
+            return
+
+        if not output_dir:
+            messagebox.showerror("Error", "Please select an output directory.")
+            return
+
+        try:
+            result = run_punishment_core(
+                fasta_path=fasta_path,
+                target_string=target_string,
+                output_dir=output_dir,
+            )
+
+            ranked_scores = sorted(
+                result.total_scores.items(),
+                key=lambda item: (-item[1], item[0]),
+            )
+
+            preview_lines = [
+                f"{sequence_id}: {score:.3f}"
+                for sequence_id, score in ranked_scores[:10]
+            ]
+
+            if len(ranked_scores) > 10:
+                preview_lines.append(f"...and {len(ranked_scores) - 10} more")
+
+            messagebox.showinfo(
+                "Punishment analysis completed",
+                "Top punishment/anomaly scores:\n\n"
+                + "\n".join(preview_lines),
+            )
+
+        except Exception as error:
+            messagebox.showerror("Error", str(error))
 
 def launch_gui() -> None:
     root = tk.Tk()
@@ -166,49 +211,3 @@ def launch_gui() -> None:
     ).grid(row=0, column=1, padx=5)
 
     root.mainloop()
-
-    def run_punishments() -> None:
-        fasta_path = fasta_var.get().strip()
-        target_string = target_var.get().strip()
-        output_dir = output_dir_var.get().strip()
-
-        if not fasta_path:
-            messagebox.showerror("Error", "Please select a FASTA file.")
-            return
-
-        if not target_string:
-            messagebox.showerror("Error", "Please enter an identifier string.")
-            return
-
-        if not output_dir:
-            messagebox.showerror("Error", "Please select an output directory.")
-            return
-
-        try:
-            result = run_punishment_core(
-                fasta_path=fasta_path,
-                target_string=target_string,
-                output_dir=output_dir,
-            )
-
-            ranked_scores = sorted(
-                result.total_scores.items(),
-                key=lambda item: (-item[1], item[0]),
-            )
-
-            preview_lines = [
-                f"{sequence_id}: {score:.3f}"
-                for sequence_id, score in ranked_scores[:10]
-            ]
-
-            if len(ranked_scores) > 10:
-                preview_lines.append(f"...and {len(ranked_scores) - 10} more")
-
-            messagebox.showinfo(
-                "Punishment analysis completed",
-                "Top punishment/anomaly scores:\n\n"
-                + "\n".join(preview_lines),
-            )
-
-        except Exception as error:
-            messagebox.showerror("Error", str(error))
