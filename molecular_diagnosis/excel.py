@@ -148,6 +148,7 @@ def write_punishment_excel_report(
         "ID",
         "PS",
         "PS/bp",
+        "EW",
         "BD",
         "INS",
         "PRL",
@@ -171,7 +172,7 @@ def write_punishment_excel_report(
         cell.alignment = Alignment(horizontal="center")
 
     ws.freeze_panes = "B2"
-    ws.auto_filter.ref = f"A1:J{len(focal_headers) + 1}"
+    ws.auto_filter.ref = f"A1:K{len(focal_headers) + 1}"
 
     sorted_headers = sorted(
         focal_headers,
@@ -183,9 +184,10 @@ def write_punishment_excel_report(
 
     for sequence_id in sorted_headers:
         total_score = punishment_result.total_scores.get(sequence_id, 0.0)
+        empty_weight_score = punishment_result.empty_weight_scores.get(sequence_id, 0.0)
 
         if alignment_length > 0:
-            score_per_bp = total_score / alignment_length
+            score_per_bp = (total_score - empty_weight_score) / alignment_length
         else:
             score_per_bp = 0.0
 
@@ -194,6 +196,7 @@ def write_punishment_excel_report(
                 sequence_id,
                 total_score,
                 score_per_bp,
+                empty_weight_score,
                 punishment_result.bd_counts.get(sequence_id, 0),
                 punishment_result.ins_counts.get(sequence_id, 0),
                 punishment_result.prl_counts.get(sequence_id, 0),
@@ -205,15 +208,16 @@ def write_punishment_excel_report(
         )
 
     for row in ws.iter_rows(min_row=2):
-        row[1].number_format = "0.000"
-        row[2].number_format = "0.000000"
-        row[3].number_format = "0"
-        row[4].number_format = "0"
-        row[5].number_format = "0"
-        row[6].number_format = "0.000"
-        row[7].number_format = "0.000"
-        row[8].number_format = "0.000"
-        row[9].number_format = "0.000"
+        row[1].number_format = "0.000"      # PS
+        row[2].number_format = "0.000000"   # PS/bp, excluding EW
+        row[3].number_format = "0.000"      # EW
+        row[4].number_format = "0"          # BD
+        row[5].number_format = "0"          # INS
+        row[6].number_format = "0"          # PRL
+        row[7].number_format = "0.000"      # POLY_PS
+        row[8].number_format = "0.000"      # BAL_PS
+        row[9].number_format = "0.000"      # INS_PS
+        row[10].number_format = "0.000"     # PRL_PS
 
         for cell in row[1:]:
             cell.alignment = Alignment(horizontal="center")

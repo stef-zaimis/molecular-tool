@@ -225,6 +225,7 @@ def process_polymorphism_or_balancing_column(
     empty_weight: float,
     total_scores: dict[str, float],
     category_scores: dict[str, float],
+    empty_weight_scores: dict[str, float],
     bd_counts: dict[str, int],
     events: list[PunishmentEvent],
 ) -> None:
@@ -246,6 +247,9 @@ def process_polymorphism_or_balancing_column(
 
             if not possibilities:
                 if empty_score > 0:
+                    sequence_id = headers[sequence_index]
+                    empty_weight_scores[sequence_id] += empty_score
+
                     add_score_event(
                         events=events,
                         headers=headers,
@@ -283,6 +287,9 @@ def process_polymorphism_or_balancing_column(
     for sequence_index, state in enumerate(column):
         if is_empty_state(state):
             if empty_score > 0:
+                sequence_id = headers[sequence_index]
+                empty_weight_scores[sequence_id] += empty_score
+
                 add_score_event(
                     events=events,
                     headers=headers,
@@ -403,6 +410,7 @@ def find_focal_punishments(
     balancing_scores: dict[str, float] = defaultdict(float)
     prolongation_scores: dict[str, float] = defaultdict(float)
     insertion_scores: dict[str, float] = defaultdict(float)
+    empty_weight_scores: dict[str, float] = defaultdict(float)
 
     bd_counts: dict[str, int] = defaultdict(int)
     prl_counts: dict[str, int] = defaultdict(int)
@@ -416,6 +424,7 @@ def find_focal_punishments(
         balancing_scores[header] = 0.0
         prolongation_scores[header] = 0.0
         insertion_scores[header] = 0.0
+        empty_weight_scores[header] = 0.0
         bd_counts[header] = 0
         prl_counts[header] = 0
         ins_counts[header] = 0
@@ -460,6 +469,7 @@ def find_focal_punishments(
                     empty_weight=POLYMORPHISM_EMPTY_WEIGHT,
                     total_scores=total_scores,
                     category_scores=polymorphism_scores,
+                    empty_weight_scores=empty_weight_scores,
                     bd_counts=bd_counts,
                     events=events,
                 )
@@ -472,6 +482,7 @@ def find_focal_punishments(
                     empty_weight=BALANCING_EMPTY_WEIGHT,
                     total_scores=total_scores,
                     category_scores=balancing_scores,
+                    empty_weight_scores=empty_weight_scores,
                     bd_counts=bd_counts,
                     events=events,
                 )
@@ -490,6 +501,7 @@ def find_focal_punishments(
         balancing_scores=dict(balancing_scores),
         prolongation_scores=dict(prolongation_scores),
         insertion_scores=dict(insertion_scores),
+        empty_weight_scores=dict(empty_weight_scores),
         bd_counts=dict(bd_counts),
         prl_counts=dict(prl_counts),
         ins_counts=dict(ins_counts),
