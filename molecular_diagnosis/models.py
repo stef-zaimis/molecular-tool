@@ -34,7 +34,6 @@ class PunishmentEvent:
     direction: str | None = None
     note: str = ""
 
-    
 @dataclass(frozen=True)
 class PunishmentResult:
     total_scores: dict[str, float]
@@ -42,11 +41,11 @@ class PunishmentResult:
     balancing_scores: dict[str, float]
     prolongation_scores: dict[str, float]
     insertion_scores: dict[str, float]
+    empty_weight_scores: dict[str, float]
     bd_counts: dict[str, int]
     prl_counts: dict[str, int]
     ins_counts: dict[str, int]
     events: list[PunishmentEvent]
-
 
 @dataclass(frozen=True)
 class PunishmentPipelineResult:
