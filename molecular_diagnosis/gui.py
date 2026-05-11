@@ -258,13 +258,13 @@ def launch_gui() -> None:
 
     tk.Checkbutton(
         options_frame,
-        text="Include ambiguous sites using DMC benefit of doubt",
+        text="Give benefit of doubt to ambiguous bases",
         variable=include_ambiguous_dmc_bd_var,
     ).pack(anchor="w", padx=10, pady=(4, 0))
 
     tk.Checkbutton(
         options_frame,
-        text="Include gappy consensus sites, excluding PRL/INS-like focal columns",
+        text="Ignore gaps",
         variable=include_gappy_consensus_dmc_sites_var,
     ).pack(anchor="w", padx=10, pady=(0, 4))
 
