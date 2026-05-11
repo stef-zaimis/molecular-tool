@@ -33,6 +33,7 @@ def build_sheet(
     ref_id: str,
     sites: list[int] | tuple[int, ...],
     target_string: str,
+    diagnostic_states: dict[int, str] | None = None,
 ) -> None:
     ws = workbook.create_sheet(name)
 
@@ -44,7 +45,10 @@ def build_sheet(
 
     ws.freeze_panes = "B3"
 
-    ref_states = extract_sites(sequences[ref_id], sites)
+    if diagnostic_states is None:
+        ref_states = extract_sites(sequences[ref_id], sites)
+    else:
+        ref_states = [diagnostic_states[site] for site in sites]
 
     rows = []
 
@@ -99,6 +103,7 @@ def write_excel_report(
     target_string: str,
     best_gap_sites: tuple[int, ...] | None,
     best_avg_sites: tuple[int, ...] | None,
+    diagnostic_states: dict[int, str] | None = None,
 ) -> None:
     workbook = Workbook()
     workbook.remove(workbook.active)
@@ -110,6 +115,7 @@ def write_excel_report(
         ref_id=ref_id,
         sites=full_sites,
         target_string=target_string,
+        diagnostic_states=diagnostic_states,
     )
 
     if best_gap_sites is not None:
@@ -120,6 +126,7 @@ def write_excel_report(
             ref_id=ref_id,
             sites=best_gap_sites,
             target_string=target_string,
+            diagnostic_states=diagnostic_states,
         )
 
     if best_avg_sites is not None:
@@ -130,6 +137,7 @@ def write_excel_report(
             ref_id=ref_id,
             sites=best_avg_sites,
             target_string=target_string,
+            diagnostic_states=diagnostic_states,
         )
 
     workbook.save(output_path)

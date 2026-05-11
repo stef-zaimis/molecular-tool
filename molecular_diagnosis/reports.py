@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from molecular_diagnosis.core import format_diag
+from molecular_diagnosis.core import format_diag_from_states
 from molecular_diagnosis.models import DMCResult, FiveSiteResult, PunishmentResult
 
 
@@ -19,7 +19,6 @@ def write_text_report(
     punishment_result: PunishmentResult | None = None,
 ) -> None:
     output_path = Path(output_path)
-    ref_seq = sequences[ref_id]
     sites = dmc.unique
 
     with open(output_path, "w", encoding="utf-8") as file:
@@ -28,7 +27,9 @@ def write_text_report(
         file.write("Input settings:\n")
         file.write(f"FASTA file: {fasta_path}\n")
         file.write(f"Output directory: {output_dir}\n")
-        file.write(f"Focal identifier string: {target_string}\n\n")
+        file.write(f"Focal identifier string: {target_string}\n")
+        file.write(f"DMC ambiguous-site benefit of doubt: {dmc.include_ambiguous_dmc_bd}\n")
+        file.write(f"DMC gappy consensus sites included: {dmc.include_gappy_consensus_dmc_sites}\n\n")
 
         file.write("Sequence summary:\n")
         file.write(f"Total sequences read: {len(sequences)}\n")
@@ -38,10 +39,15 @@ def write_text_report(
         file.write(f"Reference sequence selected: {ref_id}\n\n")
 
         file.write("Run diagnostics:\n")
-        file.write(f"Sites skipped because focal column contains non-ACGT: {dmc.skipped_non_acgt}\n")
-        file.write(f"Sites fixed in focal set (strict A/C/G/T only): {dmc.fixed_count}\n")
-        file.write(f"Fixed sites removed as globally conserved: {dmc.globally_conserved_removed}\n")
+        file.write(
+            "Sites skipped because focal column lacked an allowed consensus state "
+            f"or contained disabled ambiguity/gap states: {dmc.skipped_non_acgt}\n"
+        )
+        file.write(f"Focal consensus sites retained before global filtering: {dmc.fixed_count}\n")
+        file.write(f"Consensus sites removed as globally conserved: {dmc.globally_conserved_removed}\n")
         file.write(f"Candidate diagnostic sites retained: {dmc.candidate_count}\n")
+        file.write(f"Candidate sites included using ambiguous-site BD: {len(dmc.ambiguous_bd_sites_included)}\n")
+        file.write(f"Gappy consensus candidate sites included: {len(dmc.gappy_consensus_sites_included)}\n")
         file.write(f"1-site diagnoses found: {len(dmc.single)}\n")
         file.write(f"2-site combinations tested: {dmc.pairs_tested}\n")
         file.write(f"Valid 2-site diagnostic combinations recovered: {len(dmc.pairs)}\n")
@@ -52,31 +58,53 @@ def write_text_report(
         if not dmc.single:
             file.write("None found\n\n")
         else:
-            file.write(format_diag(dmc.single, ref_seq) + "\n\n")
+            file.write(format_diag_from_states(dmc.single, dmc.states) + "\n\n")
 
         file.write("2-site diagnostic combinations:\n")
         if not dmc.pairs:
             file.write("None found\n")
         else:
             for site_a, site_b in dmc.pairs:
-                file.write(f"[{site_a + 1}:{ref_seq[site_a]}, {site_b + 1}:{ref_seq[site_b]}]\n")
+                file.write(
+                    f"[{site_a + 1}:{dmc.states[site_a]}, "
+                    f"{site_b + 1}:{dmc.states[site_b]}]\n"
+                )
 
         file.write(f"\nTotal: {len(dmc.pairs)}\n\n")
 
         file.write("Unique diagnostic sites:\n")
-        file.write(format_diag(sites, ref_seq) + "\n\n")
+        file.write(format_diag_from_states(sites, dmc.states) + "\n\n")
 
         file.write(f"Full diagnosis ({len(sites)} sites):\n")
-        file.write(format_diag(sites, ref_seq) + "\n\n")
+        file.write(format_diag_from_states(sites, dmc.states) + "\n\n")
 
         file.write("5-site diagnosis (for similarity gap optimisation):\n")
         if five_site_result.best_gap_sites is None:
             file.write("Not computed: fewer than 5 unique diagnostic sites.\n\n")
         else:
-            file.write(format_diag(five_site_result.best_gap_sites, ref_seq) + "\n\n")
+            file.write(
+                format_diag_from_states(
+                    five_site_result.best_gap_sites,
+                    dmc.states,
+                )
+                + "\n\n"
+            )
 
         file.write("5-site diagnosis (for average similarity optimisation):\n")
         if five_site_result.best_avg_sites is None:
             file.write("Not computed: fewer than 5 unique diagnostic sites.\n\n")
         else:
-            file.write(format_diag(five_site_result.best_avg_sites, ref_seq) + "\n\n")
+            file.write(
+                format_diag_from_states(
+                    five_site_result.best_avg_sites,
+                    dmc.states,
+                )
+                + "\n\n"
+            )
+
+        if punishment_result is not None:
+            file.write("Punishment summary:\n")
+            file.write(
+                "Punishment results were supplied to the report writer, "
+                "but detailed punishment text reporting is not currently implemented.\n"
+            )

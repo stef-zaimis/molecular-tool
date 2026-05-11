@@ -10,11 +10,14 @@ from molecular_diagnosis.viewer import open_fasta_viewer
 def launch_gui() -> None:
     root = tk.Tk()
     root.title("Molecular Diagnosis Tool")
-    root.geometry("650x390")
+    root.geometry("650x470")
 
     fasta_var = tk.StringVar()
     target_var = tk.StringVar()
     output_dir_var = tk.StringVar()
+    
+    include_ambiguous_dmc_bd_var = tk.BooleanVar(value=False)
+    include_gappy_consensus_dmc_sites_var = tk.BooleanVar(value=False)
 
     def browse_fasta() -> None:
         path = filedialog.askopenfilename(
@@ -98,6 +101,8 @@ def launch_gui() -> None:
                 fasta_path=fasta_path,
                 target_string=target_string,
                 output_dir=output_dir,
+                include_ambiguous_dmc_bd=include_ambiguous_dmc_bd_var.get(),
+                include_gappy_consensus_dmc_sites=include_gappy_consensus_dmc_sites_var.get(),
             )
 
             messagebox.showinfo(
@@ -162,6 +167,21 @@ def launch_gui() -> None:
 
     tk.Label(root, text="Focal identifier string").pack(pady=(10, 0))
     tk.Entry(root, textvariable=target_var, width=80).pack(padx=10)
+
+    options_frame = tk.LabelFrame(root, text="DMC rule options")
+    options_frame.pack(fill="x", padx=10, pady=(10, 0))
+
+    tk.Checkbutton(
+        options_frame,
+        text="Include ambiguous sites using DMC benefit of doubt",
+        variable=include_ambiguous_dmc_bd_var,
+    ).pack(anchor="w", padx=10, pady=(4, 0))
+
+    tk.Checkbutton(
+        options_frame,
+        text="Include gappy consensus sites, excluding PRL/INS-like focal columns",
+        variable=include_gappy_consensus_dmc_sites_var,
+    ).pack(anchor="w", padx=10, pady=(0, 4))
 
     tk.Label(root, text="Output directory").pack(pady=(10, 0))
     tk.Entry(root, textvariable=output_dir_var, width=80).pack(padx=10)
