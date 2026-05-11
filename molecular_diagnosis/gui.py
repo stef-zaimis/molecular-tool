@@ -96,10 +96,19 @@ def launch_gui() -> None:
         else:
             found_text = "none"
 
+        consensus_text = ""
+
+        if result.consensus_txt_output_path is not None:
+            consensus_text = (
+                f"\nConsensus output:\n"
+                f"{result.consensus_txt_output_path}\n"
+            )
+
         return (
             f"Analysis completed.\n\n"
             f"Text output:\n{result.txt_output_path}\n\n"
-            f"Excel output:\n{result.xlsx_output_path}\n\n"
+            f"Excel output:\n{result.xlsx_output_path}\n"
+            f"{consensus_text}\n"
             f"DMC search summary:\n"
             f"Found combinations: {found_text}\n"
             f"Stopped at length: {dmc.stopped_at_length}\n"
@@ -226,7 +235,8 @@ def launch_gui() -> None:
             messagebox.showinfo(
                 "Done",
                 f"Punishment analysis completed.\n\n"
-                f"Excel output:\n{result.xlsx_output_path}",
+                f"Excel output:\n{result.xlsx_output_path}\n\n"
+                f"Sequence subsets output:\n{result.sequence_subsets_xlsx_output_path}",
             )
 
         except Exception as error:

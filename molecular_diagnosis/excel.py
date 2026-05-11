@@ -13,7 +13,6 @@ from molecular_diagnosis.core import (
 
 from molecular_diagnosis.models import PunishmentResult
 
-
 def autosize_columns(ws: Worksheet) -> None:
     for column in ws.columns:
         max_len = 0
