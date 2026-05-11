@@ -191,7 +191,24 @@ def find_dmc_information(
     *,
     include_ambiguous_dmc_bd: bool = False,
     include_gappy_consensus_dmc_sites: bool = False,
+    min_combination_length: int = 1,
+    max_combination_length: int = 2,
+    start_combination_length: int = 1,
+    initial_diagnostic_combinations: list[tuple[int, ...]] | None = None,
+    initial_combinations_tested_by_length: dict[int, int] | None = None,
 ) -> DMCResult:
+    if min_combination_length < 1:
+        raise ValueError("Minimum combination length must be at least 1.")
+
+    if max_combination_length < 1:
+        raise ValueError("Maximum combination length must be at least 1.")
+
+    if start_combination_length < 1:
+        raise ValueError("Start combination length must be at least 1.")
+
+    if min_combination_length > max_combination_length:
+        raise ValueError("Minimum combination length cannot exceed maximum combination length.")
+
     all_headers = list(sequences.keys())
     all_seqs = list(sequences.values())
 
@@ -271,6 +288,7 @@ def find_dmc_information(
             globally_conserved_removed += 1
 
     candidate_sites = list(candidates.keys())
+    candidate_site_set = set(candidate_sites)
 
     def sequence_matches_site(seq: str, site: int) -> bool:
         return state_matches_dmc_base(
@@ -279,34 +297,110 @@ def find_dmc_information(
             include_ambiguous_dmc_bd=include_ambiguous_dmc_bd,
         )
 
+    def sequence_matches_combination(seq: str, combo: tuple[int, ...]) -> bool:
+        return all(sequence_matches_site(seq, site) for site in combo)
+
+    def combination_is_diagnostic(combo: tuple[int, ...]) -> bool:
+        return all(
+            not sequence_matches_combination(seq, combo)
+            for seq in non_focal
+        )
+
+    def normalise_combo(combo: tuple[int, ...]) -> tuple[int, ...]:
+        return tuple(sorted(set(combo)))
+
+    diagnostic_combinations: list[tuple[int, ...]] = []
+    seen_diagnostic_combinations: set[tuple[int, ...]] = set()
+
+    for combo in initial_diagnostic_combinations or []:
+        normalised = normalise_combo(combo)
+
+        if not normalised:
+            continue
+
+        if not set(normalised).issubset(candidate_site_set):
+            continue
+
+        if normalised in seen_diagnostic_combinations:
+            continue
+
+        diagnostic_combinations.append(normalised)
+        seen_diagnostic_combinations.add(normalised)
+
+    diagnostic_combinations.sort(key=lambda combo: (len(combo), combo))
+
+    combinations_tested_by_length: dict[int, int] = {}
+
+    if initial_combinations_tested_by_length is not None:
+        combinations_tested_by_length.update(initial_combinations_tested_by_length)
+
+    def is_pruned_by_existing_dmc(combo: tuple[int, ...]) -> bool:
+        combo_set = set(combo)
+
+        return any(
+            set(found_combo).issubset(combo_set)
+            for found_combo in diagnostic_combinations
+            if len(found_combo) < len(combo)
+        )
+
+    stop_reason = "reached_maximum_length"
+    stopped_at_length = max_combination_length
+
+    if not candidate_sites:
+        stop_reason = "no_candidate_sites"
+        stopped_at_length = 0
+
+    elif start_combination_length > max_combination_length:
+        stop_reason = "start_length_exceeds_maximum_length"
+        stopped_at_length = start_combination_length - 1
+
+    else:
+        for combo_length in range(start_combination_length, max_combination_length + 1):
+            combinations_tested_by_length.setdefault(combo_length, 0)
+            found_this_length: list[tuple[int, ...]] = []
+
+            for combo in combinations(candidate_sites, combo_length):
+                if is_pruned_by_existing_dmc(combo):
+                    continue
+
+                combinations_tested_by_length[combo_length] += 1
+
+                if combination_is_diagnostic(combo):
+                    found_this_length.append(combo)
+
+            for combo in found_this_length:
+                if combo not in seen_diagnostic_combinations:
+                    diagnostic_combinations.append(combo)
+                    seen_diagnostic_combinations.add(combo)
+
+            diagnostic_combinations.sort(key=lambda found: (len(found), found))
+
+            stopped_at_length = combo_length
+
+            if found_this_length and combo_length >= min_combination_length:
+                stop_reason = "found_at_or_above_minimum_length"
+                break
+
+    diagnostic_combinations_by_length: dict[int, list[tuple[int, ...]]] = {}
+
+    for combo in diagnostic_combinations:
+        diagnostic_combinations_by_length.setdefault(len(combo), []).append(combo)
+
     singles = [
-        site
-        for site in candidate_sites
-        if all(not sequence_matches_site(seq, site) for seq in non_focal)
+        combo[0]
+        for combo in diagnostic_combinations_by_length.get(1, [])
     ]
 
-    pairs: list[tuple[int, int]] = []
-    pairs_tested = 0
+    pairs = [
+        combo
+        for combo in diagnostic_combinations_by_length.get(2, [])
+    ]
 
-    for site_a_index in range(len(candidate_sites)):
-        for site_b_index in range(site_a_index + 1, len(candidate_sites)):
-            pairs_tested += 1
-
-            site_a = candidate_sites[site_a_index]
-            site_b = candidate_sites[site_b_index]
-
-            is_diagnostic_pair = all(
-                not (
-                    sequence_matches_site(seq, site_a)
-                    and sequence_matches_site(seq, site_b)
-                )
-                for seq in non_focal
-            )
-
-            if is_diagnostic_pair:
-                pairs.append((site_a, site_b))
-
-    unique = sorted({site for pair in pairs for site in pair})
+    unique = sorted({
+        site
+        for combo in diagnostic_combinations
+        for site in combo
+    })
 
     ambiguous_bd_sites_included = sorted(
         site
@@ -316,16 +410,27 @@ def find_dmc_information(
 
     gappy_consensus_sites_included = sorted(gappy_consensus_flags)
 
+    total_combinations_tested = sum(combinations_tested_by_length.values())
+
     return DMCResult(
         single=singles,
         pairs=pairs,
         unique=unique,
         states=dict(candidates),
+        diagnostic_combinations=diagnostic_combinations,
+        diagnostic_combinations_by_length=diagnostic_combinations_by_length,
+        min_combination_length=min_combination_length,
+        max_combination_length=max_combination_length,
+        start_combination_length=start_combination_length,
+        stopped_at_length=stopped_at_length,
+        stop_reason=stop_reason,
+        combinations_tested_by_length=dict(combinations_tested_by_length),
+        total_combinations_tested=total_combinations_tested,
         fixed_count=len(fixed),
         skipped_non_acgt=skipped_non_acgt,
         globally_conserved_removed=globally_conserved_removed,
         candidate_count=len(candidates),
-        pairs_tested=pairs_tested,
+        pairs_tested=combinations_tested_by_length.get(2, 0),
         ambiguous_bd_sites_included=ambiguous_bd_sites_included,
         gappy_consensus_sites_included=gappy_consensus_sites_included,
         include_ambiguous_dmc_bd=include_ambiguous_dmc_bd,

@@ -85,6 +85,11 @@ def run_pipeline_core(
     *,
     include_ambiguous_dmc_bd: bool = False,
     include_gappy_consensus_dmc_sites: bool = False,
+    min_combination_length: int = 1,
+    max_combination_length: int = 2,
+    start_combination_length: int = 1,
+    initial_diagnostic_combinations: list[tuple[int, ...]] | None = None,
+    initial_combinations_tested_by_length: dict[int, int] | None = None,
 ) -> PipelineResult:
     (
         fasta_path,
@@ -107,6 +112,11 @@ def run_pipeline_core(
         target_string=target_string,
         include_ambiguous_dmc_bd=include_ambiguous_dmc_bd,
         include_gappy_consensus_dmc_sites=include_gappy_consensus_dmc_sites,
+        min_combination_length=min_combination_length,
+        max_combination_length=max_combination_length,
+        start_combination_length=start_combination_length,
+        initial_diagnostic_combinations=initial_diagnostic_combinations,
+        initial_combinations_tested_by_length=initial_combinations_tested_by_length,
     )
 
     five_site_result = find_best_five_site_sets(
@@ -149,6 +159,7 @@ def run_pipeline_core(
     return PipelineResult(
         txt_output_path=txt_output_path,
         xlsx_output_path=xlsx_output_path,
+        dmc=dmc,
     )
 
 
