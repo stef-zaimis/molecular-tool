@@ -71,6 +71,7 @@ class PunishmentResult:
 @dataclass(frozen=True)
 class PunishmentPipelineResult:
     xlsx_output_path: Path
+    sequence_subsets_xlsx_output_path: Path | None = None
     
 
 @dataclass(frozen=True)
@@ -78,3 +79,4 @@ class PipelineResult:
     txt_output_path: Path
     xlsx_output_path: Path
     dmc: DMCResult
+    consensus_txt_output_path: Path | None = None

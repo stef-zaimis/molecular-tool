@@ -1,9 +1,19 @@
 from pathlib import Path
 
 from molecular_diagnosis.constants import (
+    CONSENSUS_TXT_OUTPUT_BASENAME,
     PUNISHMENT_XLSX_OUTPUT_BASENAME,
+    SEQUENCE_SUBSETS_XLSX_OUTPUT_BASENAME,
     TXT_OUTPUT_BASENAME,
     XLSX_OUTPUT_BASENAME,
+)
+from molecular_diagnosis.consensus import (
+    build_focal_consensus_result,
+    write_consensus_text_report,
+)
+from molecular_diagnosis.sequence_subsets import (
+    group_sequence_subsets,
+    write_sequence_subset_excel_report,
 )
 from molecular_diagnosis.core import find_best_five_site_sets, find_dmc_information
 from molecular_diagnosis.excel import write_excel_report, write_punishment_excel_report
@@ -107,6 +117,15 @@ def run_pipeline_core(
 
     ref_id = focal_headers[0]
 
+    focal_sequences = [
+        sequences[header]
+        for header in focal_headers
+    ]
+
+    consensus_result = build_focal_consensus_result(
+        focal_sequences=focal_sequences,
+    )
+
     dmc = find_dmc_information(
         sequences=sequences,
         target_string=target_string,
@@ -129,6 +148,9 @@ def run_pipeline_core(
 
     txt_output_path = next_available_filename(output_dir / TXT_OUTPUT_BASENAME)
     xlsx_output_path = next_available_filename(output_dir / XLSX_OUTPUT_BASENAME)
+    consensus_txt_output_path = next_available_filename(
+        output_dir / CONSENSUS_TXT_OUTPUT_BASENAME
+    )
 
     write_text_report(
         output_path=txt_output_path,
@@ -143,6 +165,15 @@ def run_pipeline_core(
         dmc=dmc,
         five_site_result=five_site_result,
         punishment_result=None,
+    )
+
+    write_consensus_text_report(
+        output_path=consensus_txt_output_path,
+        target_string=target_string,
+        focal_headers=focal_headers,
+        alignment_length=alignment_length,
+        consensus_result=consensus_result,
+        dmc_sites=dmc.unique,
     )
 
     write_excel_report(
@@ -160,6 +191,7 @@ def run_pipeline_core(
         txt_output_path=txt_output_path,
         xlsx_output_path=xlsx_output_path,
         dmc=dmc,
+        consensus_txt_output_path=consensus_txt_output_path,
     )
 
 
@@ -187,8 +219,26 @@ def run_punishment_core(
         focal_headers=focal_headers,
     )
 
+    focal_sequences = {
+        header: sequences[header]
+        for header in focal_headers
+    }
+
+    sequence_subset_groups = group_sequence_subsets(
+        sequences=focal_sequences,
+    )
+
     xlsx_output_path = next_available_filename(
         output_dir / PUNISHMENT_XLSX_OUTPUT_BASENAME
+    )
+
+    sequence_subsets_xlsx_output_path = next_available_filename(
+        output_dir / SEQUENCE_SUBSETS_XLSX_OUTPUT_BASENAME
+    )
+
+    write_sequence_subset_excel_report(
+        output_path=sequence_subsets_xlsx_output_path,
+        sequence_subset_groups=sequence_subset_groups,
     )
 
     write_punishment_excel_report(
@@ -200,4 +250,5 @@ def run_punishment_core(
 
     return PunishmentPipelineResult(
         xlsx_output_path=xlsx_output_path,
+        sequence_subsets_xlsx_output_path=sequence_subsets_xlsx_output_path,
     )

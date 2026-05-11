@@ -1,6 +1,8 @@
 TXT_OUTPUT_BASENAME = "DMCs_output.txt"
 XLSX_OUTPUT_BASENAME = "comparison_output.xlsx"
 PUNISHMENT_XLSX_OUTPUT_BASENAME = "punishment_output.xlsx"
+CONSENSUS_TXT_OUTPUT_BASENAME = "focal_consensus_output.txt"  
+SEQUENCE_SUBSETS_XLSX_OUTPUT_BASENAME = "sequence_subsets_output.xlsx"
 
 COLORS = {
     "A": "90EE90",
@@ -55,6 +57,12 @@ IUPAC = {
     # Empty / missing states
     "-": set(),
     "?": set(),
+}
+
+IUPAC_FROM_BASES = {
+    frozenset(possibilities): code
+    for code, possibilities in IUPAC.items()
+    if possibilities
 }
 
 STRICT_BASES = {"A", "C", "G", "T"}
