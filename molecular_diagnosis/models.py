@@ -7,11 +7,23 @@ class DMCResult:
     single: list[int]
     pairs: list[tuple[int, int]]
     unique: list[int]
+
+    # Diagnostic consensus state for each retained candidate site.
+    # This is important once ambiguity/gap options are enabled, because the
+    # diagnostic base may not always equal the first focal/reference sequence.
+    states: dict[int, str]
+
     fixed_count: int
     skipped_non_acgt: int
     globally_conserved_removed: int
     candidate_count: int
     pairs_tested: int
+
+    ambiguous_bd_sites_included: list[int]
+    gappy_consensus_sites_included: list[int]
+
+    include_ambiguous_dmc_bd: bool
+    include_gappy_consensus_dmc_sites: bool
 
 
 @dataclass(frozen=True)

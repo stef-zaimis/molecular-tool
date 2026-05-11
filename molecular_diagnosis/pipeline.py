@@ -82,6 +82,9 @@ def run_pipeline_core(
     fasta_path: str | Path,
     target_string: str,
     output_dir: str | Path,
+    *,
+    include_ambiguous_dmc_bd: bool = False,
+    include_gappy_consensus_dmc_sites: bool = False,
 ) -> PipelineResult:
     (
         fasta_path,
@@ -102,6 +105,8 @@ def run_pipeline_core(
     dmc = find_dmc_information(
         sequences=sequences,
         target_string=target_string,
+        include_ambiguous_dmc_bd=include_ambiguous_dmc_bd,
+        include_gappy_consensus_dmc_sites=include_gappy_consensus_dmc_sites,
     )
 
     five_site_result = find_best_five_site_sets(
@@ -109,6 +114,7 @@ def run_pipeline_core(
         ref_id=ref_id,
         sites=dmc.unique,
         target_string=target_string,
+        diagnostic_states=dmc.states,
     )
 
     txt_output_path = next_available_filename(output_dir / TXT_OUTPUT_BASENAME)
@@ -137,6 +143,7 @@ def run_pipeline_core(
         target_string=target_string,
         best_gap_sites=five_site_result.best_gap_sites,
         best_avg_sites=five_site_result.best_avg_sites,
+        diagnostic_states=dmc.states,
     )
 
     return PipelineResult(
