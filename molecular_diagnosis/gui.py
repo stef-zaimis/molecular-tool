@@ -1,6 +1,6 @@
 from pathlib import Path
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, simpledialog
 
 from molecular_diagnosis.fasta_io import parse_fasta
 from molecular_diagnosis.pipeline import run_pipeline_core, run_punishment_core
@@ -18,6 +18,9 @@ def launch_gui() -> None:
     
     include_ambiguous_dmc_bd_var = tk.BooleanVar(value=False)
     include_gappy_consensus_dmc_sites_var = tk.BooleanVar(value=False)
+
+    min_combination_length_var = tk.IntVar(value=1)
+    max_combination_length_var = tk.IntVar(value=2)
 
     def browse_fasta() -> None:
         path = filedialog.askopenfilename(
@@ -78,6 +81,30 @@ def launch_gui() -> None:
             return
 
         open_fasta_viewer(root, sequences)
+    
+    def dmc_summary_message(result) -> str:
+        dmc = result.dmc
+
+        found_parts = []
+
+        for combo_length in sorted(dmc.diagnostic_combinations_by_length):
+            count = len(dmc.diagnostic_combinations_by_length[combo_length])
+            found_parts.append(f"{combo_length}-site: {count}")
+
+        if found_parts:
+            found_text = ", ".join(found_parts)
+        else:
+            found_text = "none"
+
+        return (
+            f"Analysis completed.\n\n"
+            f"Text output:\n{result.txt_output_path}\n\n"
+            f"Excel output:\n{result.xlsx_output_path}\n\n"
+            f"DMC search summary:\n"
+            f"Found combinations: {found_text}\n"
+            f"Stopped at length: {dmc.stopped_at_length}\n"
+            f"Stop reason: {dmc.stop_reason}"
+        )
 
     def run() -> None:
         fasta_path = fasta_var.get().strip()
@@ -97,20 +124,78 @@ def launch_gui() -> None:
             return
 
         try:
-            result = run_pipeline_core(
-                fasta_path=fasta_path,
-                target_string=target_string,
-                output_dir=output_dir,
-                include_ambiguous_dmc_bd=include_ambiguous_dmc_bd_var.get(),
-                include_gappy_consensus_dmc_sites=include_gappy_consensus_dmc_sites_var.get(),
-            )
+            min_combination_length = int(min_combination_length_var.get())
+            max_combination_length = int(max_combination_length_var.get())
 
-            messagebox.showinfo(
-                "Done",
-                f"Analysis completed.\n\n"
-                f"Text output:\n{result.txt_output_path}\n\n"
-                f"Excel output:\n{result.xlsx_output_path}",
-            )
+            if min_combination_length < 1:
+                messagebox.showerror("Error", "Minimum combination length must be at least 1.")
+                return
+
+            if max_combination_length < 1:
+                messagebox.showerror("Error", "Maximum combination length must be at least 1.")
+                return
+
+            if min_combination_length > max_combination_length:
+                messagebox.showerror(
+                    "Error",
+                    "Minimum combination length cannot exceed maximum combination length.",
+                )
+                return
+
+            start_combination_length = 1
+            current_max_combination_length = max_combination_length
+            initial_diagnostic_combinations = None
+            initial_combinations_tested_by_length = None
+
+            while True:
+                result = run_pipeline_core(
+                    fasta_path=fasta_path,
+                    target_string=target_string,
+                    output_dir=output_dir,
+                    include_ambiguous_dmc_bd=include_ambiguous_dmc_bd_var.get(),
+                    include_gappy_consensus_dmc_sites=include_gappy_consensus_dmc_sites_var.get(),
+                    min_combination_length=min_combination_length,
+                    max_combination_length=current_max_combination_length,
+                    start_combination_length=start_combination_length,
+                    initial_diagnostic_combinations=initial_diagnostic_combinations,
+                    initial_combinations_tested_by_length=initial_combinations_tested_by_length,
+                )
+
+                message = dmc_summary_message(result)
+
+                if result.dmc.stop_reason != "reached_maximum_length":
+                    messagebox.showinfo("Done", message)
+                    break
+
+                continue_search = messagebox.askyesno(
+                    "Continue DMC search?",
+                    message
+                    + "\n\n"
+                    + "The configured maximum combination length was reached. "
+                    + "Continue from the next length with a new maximum?",
+                )
+
+                if not continue_search:
+                    break
+
+                next_start = result.dmc.stopped_at_length + 1
+
+                new_max = simpledialog.askinteger(
+                    "New maximum combination length",
+                    "Enter the new maximum combination length:",
+                    initialvalue=next_start,
+                    minvalue=next_start,
+                    maxvalue=100,
+                )
+
+                if new_max is None:
+                    break
+
+                start_combination_length = next_start
+                current_max_combination_length = new_max
+                initial_diagnostic_combinations = result.dmc.diagnostic_combinations
+                initial_combinations_tested_by_length = result.dmc.combinations_tested_by_length
+
         except Exception as error:
             messagebox.showerror("Error", str(error))
 
@@ -182,6 +267,29 @@ def launch_gui() -> None:
         text="Include gappy consensus sites, excluding PRL/INS-like focal columns",
         variable=include_gappy_consensus_dmc_sites_var,
     ).pack(anchor="w", padx=10, pady=(0, 4))
+
+    combo_frame = tk.Frame(options_frame)
+    combo_frame.pack(anchor="w", padx=10, pady=(6, 4))
+
+    tk.Label(combo_frame, text="Minimum combination length").grid(row=0, column=0, padx=(0, 5))
+
+    tk.Spinbox(
+        combo_frame,
+        from_=1,
+        to=20,
+        width=5,
+        textvariable=min_combination_length_var,
+    ).grid(row=0, column=1, padx=(0, 15))
+
+    tk.Label(combo_frame, text="Maximum combination length").grid(row=0, column=2, padx=(0, 5))
+
+    tk.Spinbox(
+        combo_frame,
+        from_=1,
+        to=20,
+        width=5,
+        textvariable=max_combination_length_var,
+    ).grid(row=0, column=3)
 
     tk.Label(root, text="Output directory").pack(pady=(10, 0))
     tk.Entry(root, textvariable=output_dir_var, width=80).pack(padx=10)

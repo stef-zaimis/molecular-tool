@@ -8,10 +8,19 @@ class DMCResult:
     pairs: list[tuple[int, int]]
     unique: list[int]
 
-    # Diagnostic consensus state for each retained candidate site.
-    # This is important once ambiguity/gap options are enabled, because the
-    # diagnostic base may not always equal the first focal/reference sequence.
     states: dict[int, str]
+
+    diagnostic_combinations: list[tuple[int, ...]]
+    diagnostic_combinations_by_length: dict[int, list[tuple[int, ...]]]
+
+    min_combination_length: int
+    max_combination_length: int
+    start_combination_length: int
+    stopped_at_length: int
+    stop_reason: str
+
+    combinations_tested_by_length: dict[int, int]
+    total_combinations_tested: int
 
     fixed_count: int
     skipped_non_acgt: int
@@ -68,3 +77,4 @@ class PunishmentPipelineResult:
 class PipelineResult:
     txt_output_path: Path
     xlsx_output_path: Path
+    dmc: DMCResult
