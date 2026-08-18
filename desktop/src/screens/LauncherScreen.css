@@ -1,0 +1,93 @@
+/*
+ * Screen 1 — measured against docs/01-launcher.png (540x289).
+ *   title bar   y 0..49
+ *   button 1    face x 161..316, y 92..159
+ *   button 2    face x 161..360, y 184..251
+ *   hard shadow 4px black, offset left and down
+ */
+
+.launcher {
+  height: 100%;
+  background: var(--c-bg);
+}
+
+.launcher__body {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 42px 0 0 161px;
+  gap: 24px;
+  overflow: hidden;
+}
+
+.launcher__button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  /* Width is content-driven, exactly as in the reference, where the two
+     buttons differ in width because their labels do. */
+  width: fit-content;
+  padding: 5px 0 5px 6px;
+  background: var(--c-surface);
+  box-shadow: var(--shadow-hard);
+  color: var(--c-muted);
+  text-align: left;
+  transition: background-color 90ms linear, color 90ms linear, transform 90ms ease-out,
+    box-shadow 90ms ease-out;
+}
+
+.launcher__button:hover {
+  background: var(--c-surface-hover);
+  color: var(--c-text);
+}
+
+/* Pressing sinks the face into its own shadow. */
+.launcher__button:active {
+  background: var(--c-surface-active);
+  transform: translate(-2px, 2px);
+  box-shadow: -2px 2px 0 0 var(--c-shadow);
+}
+
+.launcher__action,
+.launcher__object {
+  display: block;
+  font-size: var(--fs-launcher-button);
+  line-height: 29px;
+  white-space: nowrap;
+}
+
+.launcher__action {
+  font-weight: var(--fw-bold);
+  text-transform: uppercase;
+}
+
+.launcher__object {
+  font-weight: var(--fw-regular);
+}
+
+/* ---------------------------------------------------------------- */
+/* Unfinished-action notice                                           */
+/* ---------------------------------------------------------------- */
+
+/*
+ * Only ever rendered after the user activates an unimplemented action, so the
+ * resting screen stays clean.
+ */
+.notice--launcher-wrap {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.notice--launcher-wrap .notice {
+  padding: 10px 12px;
+  box-shadow: 0 -2px 0 0 rgba(0, 0, 0, 0.25);
+}
+
+.notice--launcher-wrap .notice__text,
+.notice--launcher-wrap .notice__dismiss {
+  font-size: 13px;
+}

@@ -1,0 +1,119 @@
+/* Global reset + base shell styling. Tokens only — no literals. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--c-bg);
+  color: var(--c-text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-base);
+  line-height: var(--lh-normal);
+  font-weight: var(--fw-regular);
+  overflow: hidden;
+  /* A desktop app, not a web page: no text selection except in fields. */
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+input,
+textarea,
+[contenteditable] {
+  user-select: text;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: default;
+}
+
+input {
+  font: inherit;
+  color: inherit;
+  border: none;
+  background: none;
+}
+
+/* Keyboard focus must always be visible; pointer focus must not add noise. */
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: var(--border-focus) solid var(--c-focus-ring);
+  outline-offset: 1px;
+}
+
+/* Regions the OS should treat as window drag handles. */
+.drag-region {
+  -webkit-app-region: drag;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.app-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Visually hidden but available to assistive tech. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Panel scrollbars: light track, dark thumb, matching the mockups. */
+.themed-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--c-muted) transparent;
+}
+
+.themed-scroll::-webkit-scrollbar {
+  width: var(--w-scrollbar);
+  height: var(--w-scrollbar);
+}
+
+.themed-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.themed-scroll::-webkit-scrollbar-thumb {
+  background: var(--c-muted);
+  border-radius: var(--radius-none);
+}

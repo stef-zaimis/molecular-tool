@@ -1,0 +1,151 @@
+/*
+ * Screen 3 — measured against docs/03-molecular-diagnosis.png (1920x1080).
+ *   body starts        y 110
+ *   focal title input  x 371..913, y 134..166   Save x 915..993
+ *   string input       x 371..913, y 177..208   Enter x 915..1011
+ *   token editor       x 115..913, y 226..368   undo/redo x 915..1013
+ *   checkbox rows      x 410..443, y 440 / 494
+ *   spinners           x 812..913, y 572 / 625
+ *   alignment panel    starts x 1049
+ */
+
+.diagnosis {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+  overflow: hidden;
+}
+
+.diagnosis__left {
+  flex: 0 0 var(--w-left-panel);
+  width: var(--w-left-panel);
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding-top: 24px;
+  overflow: hidden auto;
+}
+
+/* ---------------------------------------------------------------- */
+/* Rows                                                               */
+/* ---------------------------------------------------------------- */
+
+.diagnosis__row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--gap-label-field);
+}
+
+.diagnosis__row + .diagnosis__row {
+  margin-top: 10px;
+}
+
+.diagnosis__label {
+  flex: 0 0 var(--w-label-column);
+  width: var(--w-label-column);
+  text-align: right;
+  font-size: var(--fs-base);
+  line-height: 1;
+  color: var(--c-text);
+  white-space: nowrap;
+}
+
+/* +/- sit inside the label column, left of the STRING label. */
+.diagnosis__set-controls {
+  position: absolute;
+  left: 165px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  /* Enabled: dark disc, white glyph. Disabled: recessive disc, slate glyph. */
+  --icon-knockout: var(--c-text);
+  color: var(--c-chrome);
+}
+
+.diagnosis__set-controls .icon-button {
+  width: 30px;
+  height: 30px;
+  color: var(--c-chrome);
+}
+
+.diagnosis__set-controls .icon-button:hover:not(:disabled) {
+  color: var(--c-chrome-hover);
+}
+
+/* ---------------------------------------------------------------- */
+/* Focal string editor block                                          */
+/* ---------------------------------------------------------------- */
+
+.diagnosis__editor {
+  margin-top: 16px;
+  /* The import icon sits left of the box, which itself starts at x=115. */
+  padding-left: 71px;
+}
+
+/* ---------------------------------------------------------------- */
+/* Parameters                                                         */
+/* ---------------------------------------------------------------- */
+
+.diagnosis__parameters {
+  display: flex;
+  align-items: flex-start;
+  margin-top: 72px;
+}
+
+.diagnosis__label--section {
+  flex: 0 0 var(--w-label-column);
+  width: var(--w-label-column);
+  padding-top: 8px;
+  text-align: right;
+}
+
+.diagnosis__parameter-list {
+  display: flex;
+  flex-direction: column;
+  margin-left: 60px;
+  min-width: 0;
+}
+
+.diagnosis__parameter-row {
+  display: flex;
+  align-items: center;
+  gap: 26px;
+  min-width: 0;
+}
+
+.diagnosis__parameter-row + .diagnosis__parameter-row {
+  margin-top: 19px;
+}
+
+/* Numeric rows use their own right-aligned label column ending at the
+   spinner's left edge, rather than the checkbox indent. */
+.diagnosis__parameter-row--numeric {
+  gap: 19px;
+}
+
+.diagnosis__parameter-row--numeric + .diagnosis__parameter-row--numeric {
+  margin-top: 21px;
+}
+
+.diagnosis__parameter-row:not(.diagnosis__parameter-row--numeric)
+  + .diagnosis__parameter-row--numeric {
+  margin-top: 46px;
+}
+
+.diagnosis__parameter-name {
+  flex: 0 0 383px;
+  width: 383px;
+  text-align: right;
+  font-size: var(--fs-base);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* Restore the wider gap between the spinner and its help dot. */
+.diagnosis__parameter-row--numeric .help {
+  margin-left: 10px;
+}

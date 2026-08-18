@@ -1,0 +1,274 @@
+/* ---------------------------------------------------------------- */
+/* FieldRow                                                           */
+/* ---------------------------------------------------------------- */
+
+.field-row {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-label-field);
+}
+
+.field-row--top {
+  align-items: flex-start;
+}
+
+.field-row__label {
+  flex: 0 0 var(--w-label-column);
+  width: var(--w-label-column);
+  text-align: right;
+  font-size: var(--fs-base);
+  font-weight: var(--fw-regular);
+  line-height: 1;
+  color: var(--c-text);
+  white-space: nowrap;
+}
+
+.field-row__control {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+/* ---------------------------------------------------------------- */
+/* TextField                                                          */
+/* ---------------------------------------------------------------- */
+
+.textfield {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.textfield__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: var(--h-input);
+  padding: 0 var(--pad-input-x);
+  background: var(--c-surface);
+  color: var(--c-text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-base);
+  line-height: 1;
+  border-radius: var(--radius-none);
+  transition: background-color 90ms linear;
+}
+
+.textfield__input.is-compact {
+  height: var(--h-input-compact);
+}
+
+.textfield__input::placeholder {
+  color: var(--c-muted);
+  opacity: 0.75;
+}
+
+.textfield__input:hover:not([readonly]) {
+  background: var(--c-surface-hover);
+}
+
+.textfield__input:focus-visible {
+  outline-offset: -2px;
+}
+
+.textfield__input[readonly] {
+  cursor: default;
+}
+
+/* Butted directly against the input — no gap, no border. */
+.textfield__action {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--h-input);
+  padding: 0 var(--pad-action-button-x);
+  background: var(--c-chrome);
+  color: var(--c-text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-base);
+  line-height: 1;
+  white-space: nowrap;
+  transition: background-color 90ms linear, color 90ms linear;
+}
+
+.textfield__action:hover:not(:disabled) {
+  background: var(--c-chrome-hover);
+}
+
+.textfield__action:active:not(:disabled) {
+  background: var(--c-chrome-active);
+}
+
+.textfield__action:disabled {
+  color: var(--c-muted);
+  opacity: 0.55;
+}
+
+/* ---------------------------------------------------------------- */
+/* Checkbox                                                           */
+/* ---------------------------------------------------------------- */
+
+.checkbox {
+  display: flex;
+  align-items: center;
+}
+
+.checkbox__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  margin: 0;
+  pointer-events: none;
+}
+
+.checkbox__label {
+  display: flex;
+  align-items: center;
+  gap: 19px;
+  cursor: pointer;
+}
+
+.checkbox__box {
+  position: relative;
+  flex: 0 0 var(--size-checkbox);
+  width: var(--size-checkbox);
+  height: var(--size-checkbox);
+  background: var(--c-surface);
+  transition: background-color 90ms linear;
+}
+
+.checkbox__label:hover .checkbox__box {
+  background: var(--c-surface-hover);
+}
+
+/* The tick deliberately overhangs the top-right of the box. */
+.checkbox__check {
+  position: absolute;
+  left: -1px;
+  top: -6px;
+  color: var(--c-text);
+  pointer-events: none;
+}
+
+.checkbox__text {
+  font-size: var(--fs-base);
+  line-height: 1.1;
+  color: var(--c-text);
+  white-space: nowrap;
+}
+
+.checkbox__input:focus-visible + .checkbox__label .checkbox__box {
+  outline: var(--border-focus) solid var(--c-focus-ring);
+  outline-offset: 2px;
+}
+
+.checkbox.is-disabled .checkbox__label {
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* ---------------------------------------------------------------- */
+/* NumberSpinner                                                      */
+/* ---------------------------------------------------------------- */
+
+.spinner {
+  display: flex;
+  align-items: stretch;
+  width: var(--w-spinner);
+  height: var(--h-spinner);
+  background: var(--c-surface);
+  transition: background-color 90ms linear;
+}
+
+.spinner:hover {
+  background: var(--c-surface-hover);
+}
+
+.spinner__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0 var(--sp-2);
+  background: none;
+  color: var(--c-text);
+  font-family: var(--font-mono);
+  font-size: 20px;
+  line-height: 1;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.spinner__input::-webkit-outer-spin-button,
+.spinner__input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.spinner__buttons {
+  flex: 0 0 26px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding-right: var(--sp-2);
+}
+
+.spinner__step {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 15px;
+  overflow: hidden;
+  color: var(--c-muted);
+  transition: color 90ms linear;
+}
+
+.spinner__step:hover {
+  color: var(--c-text);
+}
+
+/* One two-triangle glyph, cropped to show only the relevant half per button. */
+.spinner__glyph {
+  display: block;
+  height: 22px;
+  line-height: 0;
+}
+
+.spinner__glyph--up {
+  margin-top: 0;
+}
+
+.spinner__glyph--down {
+  margin-top: -7px;
+}
+
+/* ---------------------------------------------------------------- */
+/* IconButton                                                         */
+/* ---------------------------------------------------------------- */
+
+.icon-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--c-text);
+  transition: color 90ms linear, background-color 90ms linear;
+}
+
+.icon-button--bare {
+  width: var(--size-icon-button);
+  height: var(--size-icon-button);
+}
+
+.icon-button--panel {
+  width: 44px;
+  height: 36px;
+}
+
+.icon-button:hover:not(:disabled) {
+  color: var(--c-muted);
+}
+
+.icon-button:disabled {
+  /* Recedes but stays legible: invisible-when-disabled reads as missing. */
+  color: var(--c-surface);
+  --icon-knockout: var(--c-bg);
+}

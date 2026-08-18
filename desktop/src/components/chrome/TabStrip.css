@@ -1,0 +1,81 @@
+.tabstrip {
+  display: flex;
+  align-items: flex-end;
+  flex: 0 0 var(--h-tabbar);
+  height: var(--h-tabbar);
+  padding-left: var(--x-tabstrip-start);
+  background: var(--c-surface);
+  overflow: hidden;
+}
+
+/*
+ * Home button and tabs share the same block: inset from the top of the strip,
+ * flush with its bottom so the active item bleeds into the page below.
+ */
+.tabstrip__home,
+.tabstrip__tab {
+  height: var(--h-tab);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--c-chrome);
+  color: var(--c-bg);
+  font-family: var(--font-mono);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-regular);
+  line-height: 1;
+  white-space: nowrap;
+  transition: background-color 90ms linear, color 90ms linear;
+}
+
+.tabstrip__home {
+  flex: 0 0 var(--w-home-button);
+  width: var(--w-home-button);
+  border-radius: var(--radius-home) var(--radius-home) 0 0;
+}
+
+.tabstrip__home:hover:not(.is-active) {
+  background: var(--c-chrome-hover);
+  color: var(--c-muted);
+}
+
+.tabstrip__home.is-active {
+  background: var(--c-bg);
+  color: var(--c-text);
+}
+
+.tabstrip__tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--gap-tab);
+  margin-left: var(--gap-tab);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.tabstrip__tab {
+  padding: 0 var(--pad-tab-x);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tabstrip__tab:hover:not(.is-active):not(:disabled) {
+  background: var(--c-chrome-hover);
+  color: var(--c-muted);
+}
+
+.tabstrip__tab.is-active {
+  background: var(--c-bg);
+  color: var(--c-text);
+}
+
+/*
+ * Disabled tabs keep the reference's low-contrast treatment. The cursor and
+ * aria state carry the "unavailable" meaning that colour alone would not.
+ */
+.tabstrip__tab:disabled {
+  cursor: default;
+  color: var(--c-bg);
+  opacity: 0.75;
+}

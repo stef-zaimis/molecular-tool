@@ -1,0 +1,135 @@
+.focal-editor {
+  display: flex;
+  align-items: flex-start;
+}
+
+.focal-editor__gutter {
+  flex: 0 0 auto;
+}
+
+.focal-editor__gutter .icon-button {
+  width: 33px;
+  height: 34px;
+  background: var(--c-chrome);
+  color: var(--c-text);
+}
+
+.focal-editor__gutter .icon-button:hover:not(:disabled) {
+  background: var(--c-chrome-hover);
+  color: var(--c-text);
+}
+
+.focal-editor__gutter .icon-button:disabled {
+  color: var(--c-muted);
+  opacity: 0.55;
+}
+
+/* ---------------------------------------------------------------- */
+/* The editing surface                                                */
+/* ---------------------------------------------------------------- */
+
+.focal-editor__box {
+  position: relative;
+  flex: 0 1 798px;
+  width: 798px;
+  height: 143px;
+  margin-left: 12px;
+  margin-right: 2px;
+  min-height: 72px;
+  background: var(--c-surface);
+  overflow: hidden;
+  /* Native corner grip, matching the resize handle drawn in the mockup. */
+  resize: vertical;
+  transition: background-color 90ms linear;
+}
+
+.focal-editor__box.is-focused {
+  outline: var(--border-focus) solid var(--c-focus-ring);
+  outline-offset: -2px;
+}
+
+/*
+ * The highlight layer and the textarea must share EVERY metric that affects
+ * glyph position, or the colours drift off the caret. Both inherit this block.
+ */
+.focal-editor__highlight,
+.focal-editor__input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 13px 22px 13px 14px;
+  border: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-token);
+  font-weight: var(--fw-regular);
+  line-height: 1.55;
+  letter-spacing: 0;
+  tab-size: 4;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.focal-editor__highlight {
+  color: var(--c-token-neutral);
+  pointer-events: none;
+  user-select: none;
+}
+
+.focal-editor__input {
+  background: transparent;
+  /* Transparent text with a visible caret: the colours come from the layer
+     underneath, the caret and selection stay native. */
+  color: transparent;
+  caret-color: var(--c-text);
+  resize: none;
+  outline: none;
+}
+
+.focal-editor__input::selection {
+  background: rgba(168, 188, 216, 0.35);
+}
+
+/* ---------------------------------------------------------------- */
+/* Token states                                                       */
+/* ---------------------------------------------------------------- */
+
+.focal-token {
+  border-radius: 2px;
+}
+
+.focal-token--match {
+  color: var(--c-token-match);
+}
+
+.focal-token--noMatch {
+  color: var(--c-token-nomatch);
+}
+
+.focal-token--neutral {
+  color: var(--c-token-neutral);
+}
+
+.focal-editor__separator {
+  color: var(--c-token-neutral);
+}
+
+.focal-editor__space {
+  color: inherit;
+}
+
+/* ---------------------------------------------------------------- */
+/* Undo / redo panel                                                  */
+/* ---------------------------------------------------------------- */
+
+.focal-editor__history {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 37px;
+  padding: 0 3px;
+  background: var(--c-chrome);
+}

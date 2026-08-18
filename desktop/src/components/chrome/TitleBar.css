@@ -1,0 +1,94 @@
+.titlebar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 0 0 var(--h-titlebar);
+  height: var(--h-titlebar);
+  background: var(--c-chrome);
+  overflow: hidden;
+}
+
+.titlebar__title {
+  margin: 0;
+  font-size: var(--fs-base);
+  font-weight: var(--fw-bold);
+  line-height: 1;
+  letter-spacing: 0;
+  color: var(--c-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Launcher: title sits hard against the left edge (measured x=31). */
+.titlebar--launcher .titlebar__title {
+  margin-left: 31px;
+  margin-right: var(--sp-4);
+}
+
+/*
+ * Workspace: the reference centres the title in the gap BETWEEN the hamburger
+ * and the window controls (measured centre x=915 on a 1920 frame, not 960),
+ * so it is a flex child rather than absolutely centred on the window.
+ */
+.titlebar--workspace .titlebar__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: center;
+  pointer-events: none;
+}
+
+.titlebar__menu {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 55px;
+  height: 100%;
+  margin-left: 10px;
+  /* Reference glyph colour is the body slate, not white. */
+  color: var(--c-bg);
+  transition: color 90ms linear;
+}
+
+.titlebar__menu:hover {
+  color: var(--c-text);
+}
+
+.titlebar__controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+  padding-right: 14px;
+  height: 100%;
+}
+
+.titlebar__control {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  color: var(--c-bg);
+  transition: color 90ms linear, background-color 90ms linear;
+}
+
+/* The compact launcher uses the dimmer accent for its two controls. */
+.titlebar--launcher .titlebar__controls {
+  gap: 12px;
+  padding-right: 13px;
+}
+
+.titlebar__control:hover {
+  color: var(--c-text);
+  background: var(--c-chrome-hover);
+}
+
+.titlebar__control--close:hover {
+  background: var(--c-close-hover);
+  color: var(--c-text);
+}
+
+.titlebar__control:active {
+  background: var(--c-chrome-active);
+}

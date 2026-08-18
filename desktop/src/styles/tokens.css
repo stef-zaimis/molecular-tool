@@ -1,0 +1,158 @@
+/*
+ * Design tokens.
+ *
+ * Every value here was measured from the reference mockups in docs/ by
+ * sampling pixels, not estimated by eye. The mockups are 1920x1080 (screens
+ * 2 and 3) and 540x289 (the launcher), and both use the same type scale.
+ *
+ * Rule: components must not contain raw colour literals or one-off sizes.
+ * If a component needs a value that is not here, add it here first.
+ */
+
+:root {
+  /* ---------------------------------------------------------------- */
+  /* Colour — the mockups use a strict 3-tone slate palette            */
+  /* ---------------------------------------------------------------- */
+
+  /* Page/body background, and the fill of the *active* tab.           */
+  --c-bg: #525f72;
+  /* Title bar, dark action buttons, tooltips, inactive tabs.          */
+  --c-chrome: #2d3541;
+  /* Inputs, panels, checkboxes, tab strip, alignment area.            */
+  --c-surface: #3d4757;
+  /* Dim accents: launcher labels, disabled glyphs, scrollbar tracks.  */
+  --c-muted: #7f92ae;
+  --c-text: #ffffff;
+  --c-shadow: #000000;
+
+  /* Interaction states. Derived from the palette above by small
+     lightness steps; the mockups only show resting states, so these are
+     an interpretation (see UI_NOTES §4). */
+  --c-surface-hover: #475264;
+  --c-surface-active: #354050;
+  --c-chrome-hover: #39434f;
+  --c-chrome-active: #262d37;
+  --c-bg-hover: #5c6a7f;
+  --c-close-hover: #b4525f;
+  --c-focus-ring: #a8bcd8;
+
+  /* Focal-string token states (measured from screen 3's STRING area). */
+  --c-token-match: #82b987;
+  --c-token-nomatch: #d39da7;
+  --c-token-neutral: #b7c0cf;
+
+  /* ---------------------------------------------------------------- */
+  /* Typography                                                        */
+  /* ---------------------------------------------------------------- */
+
+  /* JetBrains Mono is bundled via @fontsource (woff2) and imported in
+     renderer.tsx, so it renders identically on Windows/macOS/Linux
+     without relying on a locally installed copy. The stack after it is
+     a fallback only. */
+  --font-mono: 'JetBrains Mono', ui-monospace, 'Cascadia Mono', 'Menlo', 'DejaVu Sans Mono',
+    'Courier New', monospace;
+
+  /* Measured: every label, input, tab and button in screens 2 and 3
+     renders at a 16.2px advance. JetBrains Mono advance is 0.6em,
+     so 16.2 / 0.6 = 27px. There is exactly one primary size. */
+  --fs-base: 27px;
+  /* Launcher buttons measured 14.9px advance -> 25px. */
+  --fs-launcher-button: 25px;
+  --fs-token: 17px;
+  --fs-tooltip: 16px;
+
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-bold: 700;
+
+  --lh-tight: 1.05;
+  --lh-normal: 1.2;
+  --lh-tooltip: 1.32;
+
+  /* ---------------------------------------------------------------- */
+  /* Spacing                                                           */
+  /* ---------------------------------------------------------------- */
+
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 11px;
+  --sp-4: 16px;
+  --sp-5: 21px;
+  --sp-6: 32px;
+  --sp-7: 43px;
+  --sp-8: 54px;
+  --sp-9: 67px;
+
+  /* ---------------------------------------------------------------- */
+  /* Window chrome                                                     */
+  /* ---------------------------------------------------------------- */
+
+  --h-titlebar: 50px;
+  --h-tabbar: 60px;
+  /* Tabs are inset from the top of the tab strip and run to its bottom,
+     where they visually merge into the body. */
+  --tab-top-inset: 11px;
+  --h-tab: 49px;
+  --w-home-button: 50px;
+  --gap-tab: 17px;
+  --pad-tab-x: 8px;
+  --x-tabstrip-start: 41px;
+
+  /* ---------------------------------------------------------------- */
+  /* Controls                                                          */
+  /* ---------------------------------------------------------------- */
+
+  --h-input: 33px;
+  --h-input-compact: 32px;
+  --h-action-button: 33px;
+  --pad-action-button-x: 8px;
+  --pad-input-x: 10px;
+
+  --size-checkbox: 33px;
+  --size-help: 30px;
+  --size-icon-button: 30px;
+
+  --w-spinner: 102px;
+  --h-spinner: 32px;
+
+  /* Form geometry of screens 2 and 3: labels are right-aligned to a
+     shared column edge, fields begin just after it. */
+  --w-label-column: 350px;
+  --gap-label-field: 21px;
+  --w-field: 543px;
+  --w-field-wide: 546px;
+
+  /* Rhythm between stacked form rows / checkbox rows. */
+  --row-step: 43px;
+  --checkbox-row-step: 53px;
+
+  /* ---------------------------------------------------------------- */
+  /* Surfaces                                                          */
+  /* ---------------------------------------------------------------- */
+
+  /* The signature hard-edged offset shadow. Measured on the launcher
+     buttons: a solid black block 4px to the LEFT and 4px BELOW the face,
+     with no blur. */
+  --shadow-hard: -4px 4px 0 0 var(--c-shadow);
+  --shadow-hard-sm: -3px 3px 0 0 var(--c-shadow);
+  --shadow-tooltip: -5px 5px 0 0 rgba(0, 0, 0, 0.32);
+
+  /* The design has square corners everywhere except the round help
+     buttons and the slightly rounded home button. */
+  --radius-none: 0px;
+  --radius-home: 6px;
+  --radius-round: 50%;
+
+  --border-focus: 2px;
+
+  /* Scrollbars drawn inside panels: light track, dark thumb. */
+  --w-scrollbar: 8px;
+  --w-viewer-scrollbar: 11px;
+
+  /* Right-hand alignment workspace inset from the tab bar / window edge. */
+  --inset-workspace-top: 67px;
+  --inset-workspace-bottom: 68px;
+  --w-left-panel: 1049px;
+
+  --z-tooltip: 100;
+}

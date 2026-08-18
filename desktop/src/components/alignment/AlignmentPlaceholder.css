@@ -1,0 +1,67 @@
+.alignment {
+  display: flex;
+  align-items: stretch;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  padding-top: var(--inset-workspace-top);
+  padding-bottom: var(--inset-workspace-bottom);
+}
+
+/*
+ * Vertical rail sitting to the LEFT of the panel, as in the reference.
+ * Presentational for now: the alignment viewer will own the real scrollbar.
+ */
+.alignment__rail {
+  position: relative;
+  flex: 0 0 var(--w-viewer-scrollbar);
+  width: var(--w-viewer-scrollbar);
+  background: var(--c-muted);
+}
+
+.alignment__rail-thumb {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 45%;
+  height: 9%;
+  background: var(--c-chrome);
+}
+
+.alignment__panel {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 2px;
+  background: var(--c-surface);
+  overflow: hidden;
+}
+
+.alignment__empty {
+  text-align: center;
+  padding: var(--sp-6);
+  /* Present but recessive: the area should read as intentionally reserved,
+     not as an error or as unfinished white space. */
+  opacity: 0.42;
+}
+
+.alignment__title {
+  margin: 0;
+  font-size: var(--fs-base);
+  font-weight: var(--fw-regular);
+  line-height: 1.2;
+  color: var(--c-text);
+  white-space: nowrap;
+}
+
+.alignment__caption {
+  margin: var(--sp-2) 0 0;
+  font-size: var(--fs-tooltip);
+  line-height: 1.3;
+  color: var(--c-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

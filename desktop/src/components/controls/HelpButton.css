@@ -1,0 +1,63 @@
+.help {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.help__dot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--size-help);
+  height: var(--size-help);
+  border-radius: var(--radius-round);
+  background: var(--c-surface);
+  color: var(--c-bg);
+  font-family: var(--font-mono);
+  font-size: 20px;
+  font-weight: var(--fw-bold);
+  line-height: 1;
+  transition: background-color 90ms linear, color 90ms linear;
+}
+
+.help__dot:hover,
+.help__dot.is-open {
+  background: var(--c-chrome);
+  color: var(--c-text);
+}
+
+.help__tooltip {
+  position: absolute;
+  left: calc(100% + 14px);
+  top: 50%;
+  transform: translateY(-14px);
+  z-index: var(--z-tooltip);
+
+  display: block;
+  width: 317px;
+  padding: 11px 14px 13px;
+
+  background: var(--c-chrome);
+  color: var(--c-text);
+  font-size: var(--fs-tooltip);
+  font-weight: var(--fw-regular);
+  line-height: var(--lh-tooltip);
+  text-align: left;
+  white-space: normal;
+  box-shadow: var(--shadow-tooltip);
+  pointer-events: none;
+}
+
+/* Pointer notch aimed back at the dot. */
+.help__tooltip::before {
+  content: '';
+  position: absolute;
+  left: -9px;
+  top: 4px;
+  width: 0;
+  height: 0;
+  border-top: 10px solid transparent;
+  border-bottom: 10px solid transparent;
+  border-right: 10px solid var(--c-chrome);
+}
