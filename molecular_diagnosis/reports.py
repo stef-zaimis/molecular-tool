@@ -1,6 +1,9 @@
 from pathlib import Path
 
+from collections.abc import Sequence
+
 from molecular_diagnosis.core import format_diag_from_states
+from molecular_diagnosis.focal import focal_label
 from molecular_diagnosis.models import DMCResult, FiveSiteResult, PunishmentResult
 
 
@@ -15,7 +18,7 @@ def write_text_report(
     output_path: str | Path,
     fasta_path: str | Path,
     output_dir: str | Path,
-    target_string: str,
+    focal_strings: Sequence[str],
     sequences: dict[str, str],
     alignment_length: int,
     focal_headers: list[str],
@@ -34,7 +37,12 @@ def write_text_report(
         file.write("Input settings:\n")
         file.write(f"FASTA file: {fasta_path}\n")
         file.write(f"Output directory: {output_dir}\n")
-        file.write(f"Focal identifier string: {target_string}\n")
+        # One selector formats exactly as the single-string pipeline did.
+        file.write(f"Focal identifier string: {focal_label(focal_strings)}\n")
+        if len(focal_strings) > 1:
+            file.write(f"Focal identifier strings: {len(focal_strings)}\n")
+            for selector in focal_strings:
+                file.write(f"  {selector}\n")
         file.write(f"DMC ambiguous-site benefit of doubt: {dmc.include_ambiguous_dmc_bd}\n")
         file.write(f"DMC gappy consensus sites included: {dmc.include_gappy_consensus_dmc_sites}\n")
         file.write(f"Minimum combination length: {dmc.min_combination_length}\n")

@@ -34,15 +34,12 @@ export const TOKEN_SEPARATOR = ';';
 /** Why a candidate focal string cannot be added, or null when it is fine. */
 export type FocalStringProblem =
   | { readonly kind: 'empty' }
-  | { readonly kind: 'containsSeparator' }
   | { readonly kind: 'duplicate' };
 
 export function describeFocalStringProblem(problem: FocalStringProblem): string {
   switch (problem.kind) {
     case 'empty':
       return 'Enter a search string first.';
-    case 'containsSeparator':
-      return `A focal string cannot contain '${TOKEN_SEPARATOR}'.`;
     case 'duplicate':
       return 'That string is already in the focal set.';
   }
@@ -60,7 +57,8 @@ export function validateFocalString(
 ): FocalStringProblem | null {
   const trimmed = value.trim();
   if (trimmed.length === 0) return { kind: 'empty' };
-  if (trimmed.includes(TOKEN_SEPARATOR)) return { kind: 'containsSeparator' };
+  // A ';' is allowed inside an entry: the separator shown between entries is a
+  // rendered element, never a stored character, so there is nothing to confuse.
   if (existing.includes(trimmed)) return { kind: 'duplicate' };
   return null;
 }

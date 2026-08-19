@@ -5,6 +5,11 @@ from molecular_diagnosis.constants import (
     IUPAC,
     STRICT_BASES,
 )
+from molecular_diagnosis.focal import (
+    FocalSelector,
+    header_matches_focal,
+    normalise_focal_strings,
+)
 from molecular_diagnosis.models import DMCResult, FiveSiteResult
 
 
@@ -157,9 +162,11 @@ def compute_metrics(
     sequences: dict[str, str],
     ref_id: str,
     sites: list[int] | tuple[int, ...],
-    target_string: str,
+    focal_strings: FocalSelector,
     diagnostic_states: dict[int, str] | None = None,
 ) -> tuple[float, float, float]:
+    selectors = normalise_focal_strings(focal_strings)
+
     if diagnostic_states is None:
         ref_states = extract_sites(sequences[ref_id], sites)
     else:
@@ -168,7 +175,7 @@ def compute_metrics(
     similarities = []
 
     for header, seq in sequences.items():
-        if header == ref_id or target_string in header:
+        if header == ref_id or header_matches_focal(header, selectors):
             continue
 
         query_states = extract_sites(seq, sites)
@@ -187,7 +194,7 @@ def compute_metrics(
 
 def find_dmc_information(
     sequences: dict[str, str],
-    target_string: str,
+    focal_strings: FocalSelector,
     *,
     include_ambiguous_dmc_bd: bool = False,
     include_gappy_consensus_dmc_sites: bool = False,
@@ -209,12 +216,20 @@ def find_dmc_information(
     if min_combination_length > max_combination_length:
         raise ValueError("Minimum combination length cannot exceed maximum combination length.")
 
+    selectors = normalise_focal_strings(focal_strings)
+
     all_headers = list(sequences.keys())
     all_seqs = list(sequences.values())
 
-    focal_headers = [header for header in all_headers if target_string in header]
+    focal_headers = [
+        header for header in all_headers if header_matches_focal(header, selectors)
+    ]
     focal = [sequences[header] for header in focal_headers]
-    non_focal = [seq for header, seq in sequences.items() if target_string not in header]
+    non_focal = [
+        seq
+        for header, seq in sequences.items()
+        if not header_matches_focal(header, selectors)
+    ]
 
     if not focal:
         raise ValueError("No focal sequences found.")
@@ -442,7 +457,7 @@ def find_best_five_site_sets(
     sequences: dict[str, str],
     ref_id: str,
     sites: list[int],
-    target_string: str,
+    focal_strings: FocalSelector,
     diagnostic_states: dict[int, str] | None = None,
 ) -> FiveSiteResult:
     total_combinations_tested = 0
@@ -467,7 +482,7 @@ def find_best_five_site_sets(
             sequences=sequences,
             ref_id=ref_id,
             sites=combo,
-            target_string=target_string,
+            focal_strings=focal_strings,
             diagnostic_states=diagnostic_states,
         )
 

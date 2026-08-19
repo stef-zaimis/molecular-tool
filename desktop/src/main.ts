@@ -1,7 +1,7 @@
-import { app, BrowserWindow, ipcMain, dialog, screen } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, screen, shell } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
-import readline from 'node:readline';
+import { PythonBridge } from './backend/pythonBridge';
 
 // Injected by @electron-forge/plugin-vite.
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
@@ -20,6 +20,23 @@ const WORKSPACE_PREFERRED = { width: 1920, height: 1080 };
 const WORKSPACE_MIN = { width: 1180, height: 760 };
 
 let mainWindow: BrowserWindow | null = null;
+
+/**
+ * The Python analysis backend, started lazily on first use.
+ *
+ * Repo root is the parent of the Electron app directory in development, so the
+ * service is importable as `molecular_diagnosis.service` and the project
+ * virtualenv is found next to it. `MOLECULAR_TOOL_ROOT` overrides it.
+ */
+let backend: PythonBridge | null = null;
+
+function getBackend(): PythonBridge {
+  if (!backend) {
+    const repoRoot = process.env.MOLECULAR_TOOL_ROOT ?? path.resolve(app.getAppPath(), '..');
+    backend = new PythonBridge(repoRoot, (message) => console.log(`[backend] ${message}`));
+  }
+  return backend;
+}
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -128,62 +145,33 @@ function registerIpc(): void {
   });
 
   /**
-   * Reads ONLY the header lines of a FASTA file.
+   * Everything scientific goes through the Python service.
    *
-   * This is not the analysis pipeline and not a FASTA parser: it never reads a
-   * residue, never validates alignment, and never computes anything. It exists
-   * so focal strings can be validated against the real headers of the selected
-   * file instead of a fixture.
-   *
-   * Header extraction matches the Python reader (`fasta_io.parse_fasta`):
-   * a header line is one starting with '>', and the header is the rest of the
-   * line stripped of surrounding whitespace. Case is preserved, because focal
-   * matching is case-sensitive.
+   * These handlers are deliberately thin: they validate that a payload is the
+   * right shape and forward it. No parsing, no matching and no analysis happens
+   * in Electron — that all lives in `molecular_diagnosis`.
    */
-  ipcMain.handle('fasta:read-headers', async (_event, filePath: unknown) => {
-    if (typeof filePath !== 'string' || filePath.length === 0) {
-      return { ok: false as const, code: 'INVALID_PATH', message: 'No file path was supplied.' };
-    }
-
-    try {
-      const stat = await fs.promises.stat(filePath);
-      if (!stat.isFile()) {
-        return { ok: false as const, code: 'NOT_A_FILE', message: 'That path is not a file.' };
-      }
-
-      const headers: string[] = [];
-      const seen = new Set<string>();
-      let duplicateCount = 0;
-
-      const stream = fs.createReadStream(filePath, { encoding: 'utf8' });
-      const lines = readline.createInterface({ input: stream, crlfDelay: Infinity });
-
-      try {
-        for await (const raw of lines) {
-          if (raw.charCodeAt(0) !== 62 /* '>' */) continue;
-          const header = raw.slice(1).trim();
-          if (seen.has(header)) duplicateCount += 1;
-          else seen.add(header);
-          headers.push(header);
-        }
-      } finally {
-        lines.close();
-        stream.close();
-      }
-
-      return {
-        ok: true as const,
-        path: filePath,
-        headers,
-        duplicateCount,
-      };
-    } catch (error) {
+  const forward = (method: string) => async (_event: unknown, params: unknown) => {
+    if (params !== undefined && (typeof params !== 'object' || params === null)) {
       return {
         ok: false as const,
-        code: 'READ_FAILED',
-        message: error instanceof Error ? error.message : 'Could not read the file.',
+        error: { code: 'INVALID_PARAMETER', message: 'The request payload was not an object.' },
       };
     }
+    return getBackend().call(method, (params ?? {}) as Record<string, unknown>);
+  };
+
+  ipcMain.handle('backend:load-fasta', forward('loadFasta'));
+  ipcMain.handle('backend:validate-focal-strings', forward('validateFocalStrings'));
+  ipcMain.handle('backend:run-molecular-diagnosis', forward('runMolecularDiagnosis'));
+  ipcMain.handle('backend:ping', forward('ping'));
+
+  /** Reveal a produced output file in the OS file manager. */
+  ipcMain.handle('shell:show-item-in-folder', async (_event, filePath: unknown) => {
+    if (typeof filePath !== 'string' || !filePath) return false;
+    if (!fs.existsSync(filePath)) return false;
+    shell.showItemInFolder(filePath);
+    return true;
   });
 
   /** Writes the focal set to a user-chosen .txt file, one entry per line. */
@@ -230,6 +218,11 @@ app.whenReady().then(() => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+});
+
+app.on('before-quit', () => {
+  backend?.dispose();
+  backend = null;
 });
 
 app.on('window-all-closed', () => {

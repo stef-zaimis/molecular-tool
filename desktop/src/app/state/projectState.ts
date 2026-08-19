@@ -5,6 +5,13 @@ import type {
   MolecularDiagnosisConfig,
   ProjectDraft,
 } from '../../contract';
+import type {
+  BackendError,
+  DiagnosisResumeState,
+  FastaLoadResult,
+  FocalStringValidation,
+  MolecularDiagnosisResult,
+} from '../../backendContract';
 
 /**
  * One coherent state model for the whole application.
@@ -35,18 +42,37 @@ export interface FocalHistory {
   readonly future: readonly (readonly string[])[];
 }
 
-/** Headers of the selected FASTA. Header lines only — nothing else is read. */
-export interface AlignmentHeaders {
-  readonly path: string;
-  readonly headers: readonly string[];
-  readonly duplicateCount: number;
-}
-
+/**
+ * The selected FASTA, as parsed and validated by the Python backend.
+ * The frontend never parses FASTA itself.
+ */
 export type AlignmentLoadState =
   | { readonly status: 'idle' }
   | { readonly status: 'loading'; readonly path: string }
-  | { readonly status: 'loaded'; readonly data: AlignmentHeaders }
-  | { readonly status: 'failed'; readonly path: string; readonly message: string };
+  | { readonly status: 'loaded'; readonly data: FastaLoadResult }
+  | { readonly status: 'failed'; readonly path: string; readonly error: BackendError };
+
+/**
+ * Per-focal-string green/red, as decided by the backend matcher.
+ * Null means "not validated yet", which renders neutral rather than red.
+ */
+export type FocalValidationState =
+  | { readonly status: 'idle' }
+  | { readonly status: 'validating' }
+  | { readonly status: 'loaded'; readonly results: readonly FocalStringValidation[]; readonly unionMatchCount: number }
+  | { readonly status: 'failed'; readonly error: BackendError };
+
+/** A Molecular Diagnosis run, including the continuation offer. */
+export type DiagnosisRunState =
+  | { readonly status: 'idle' }
+  | { readonly status: 'running'; readonly continuing: boolean }
+  | {
+      readonly status: 'succeeded';
+      readonly result: MolecularDiagnosisResult;
+      /** Set when the search stopped only because it hit the maximum size. */
+      readonly pendingContinuation: DiagnosisResumeState | null;
+    }
+  | { readonly status: 'failed'; readonly error: BackendError };
 
 export interface AppState {
   readonly screen: ScreenId;
@@ -62,8 +88,12 @@ export interface AppState {
   /** Per-focal-set undo/redo stacks, keyed by focal set id. */
   readonly focalHistory: Readonly<Record<string, FocalHistory>>;
   readonly focalMode: FocalEditMode;
-  /** Headers of the selected FASTA, used to validate focal strings. */
+  /** The parsed/validated FASTA, from the Python backend. */
   readonly alignment: AlignmentLoadState;
+  /** Backend verdict on each focal string of the active set. */
+  readonly focalValidation: FocalValidationState;
+  /** The most recent Molecular Diagnosis run. */
+  readonly diagnosisRun: DiagnosisRunState;
   /** Transient banner text, e.g. for actions that are not implemented yet. */
   readonly notice: string | null;
 }
@@ -134,6 +164,8 @@ export function createInitialState(): AppState {
     focalHistory: { [focalSet.id]: EMPTY_HISTORY },
     focalMode: 'add',
     alignment: { status: 'idle' },
+    focalValidation: { status: 'idle' },
+    diagnosisRun: { status: 'idle' },
     notice: null,
   };
 }
@@ -143,8 +175,20 @@ export type AppAction =
   | { type: 'setProjectName'; name: string }
   | { type: 'setFastaPath'; path: string | null }
   | { type: 'alignmentLoading'; path: string }
-  | { type: 'alignmentLoaded'; data: AlignmentHeaders }
-  | { type: 'alignmentFailed'; path: string; message: string }
+  | { type: 'alignmentLoaded'; data: FastaLoadResult }
+  | { type: 'alignmentFailed'; path: string; error: BackendError }
+  | { type: 'focalValidating' }
+  | {
+      type: 'focalValidated';
+      results: readonly FocalStringValidation[];
+      unionMatchCount: number;
+    }
+  | { type: 'focalValidationFailed'; error: BackendError }
+  | { type: 'diagnosisStarted'; continuing: boolean }
+  | { type: 'diagnosisSucceeded'; result: MolecularDiagnosisResult }
+  | { type: 'diagnosisFailed'; error: BackendError }
+  | { type: 'dismissContinuation' }
+  | { type: 'clearDiagnosisRun' }
   | { type: 'toggleAnalysis'; analysis: AnalysisKind }
   | { type: 'setActiveAnalysis'; analysis: AnalysisKind }
   | { type: 'updateMolecularDiagnosis'; patch: Partial<MolecularDiagnosisConfig> }
@@ -173,11 +217,17 @@ export function selectedAnalyses(analyses: AnalysisSelection): readonly Analysis
 /**
  * Can the user leave project creation for an analysis workspace?
  *
- * Two gates: a FASTA must be chosen (no analysis is meaningful without one),
- * and at least one analysis that actually has a screen must be selected.
+ * Three gates: a FASTA must be chosen, that FASTA must have loaded and
+ * validated in the Python backend (a ragged file is not analysable, so
+ * entering the workspace with one would only fail later), and at least one
+ * analysis that actually has a screen must be selected.
  */
 export function canEnterWorkspace(state: AppState): boolean {
-  return state.draft.fastaPath !== null && state.draft.analyses.molecularDiagnosis;
+  return (
+    state.draft.fastaPath !== null &&
+    state.alignment.status === 'loaded' &&
+    state.draft.analyses.molecularDiagnosis
+  );
 }
 
 export function focalHistoryFor(state: AppState, focalSetId: string): FocalHistory {
@@ -220,21 +270,71 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return {
         ...state,
         draft: { ...state.draft, fastaPath: action.path },
-        // Headers belong to the previous file; drop them until the new one loads.
+        // Results belong to the previous file; drop them until the new one loads.
         alignment: action.path === null ? { status: 'idle' } : state.alignment,
+        focalValidation: { status: 'idle' },
+        diagnosisRun: { status: 'idle' },
       };
 
     case 'alignmentLoading':
       return { ...state, alignment: { status: 'loading', path: action.path } };
 
     case 'alignmentLoaded':
-      return { ...state, alignment: { status: 'loaded', data: action.data } };
+      return {
+        ...state,
+        alignment: { status: 'loaded', data: action.data },
+        // A new file invalidates the previous verdicts and the previous run.
+        focalValidation: { status: 'idle' },
+        diagnosisRun: { status: 'idle' },
+      };
 
     case 'alignmentFailed':
       return {
         ...state,
-        alignment: { status: 'failed', path: action.path, message: action.message },
+        alignment: { status: 'failed', path: action.path, error: action.error },
+        focalValidation: { status: 'idle' },
+        diagnosisRun: { status: 'idle' },
       };
+
+    case 'focalValidating':
+      return { ...state, focalValidation: { status: 'validating' } };
+
+    case 'focalValidated':
+      return {
+        ...state,
+        focalValidation: {
+          status: 'loaded',
+          results: action.results,
+          unionMatchCount: action.unionMatchCount,
+        },
+      };
+
+    case 'focalValidationFailed':
+      return { ...state, focalValidation: { status: 'failed', error: action.error } };
+
+    case 'diagnosisStarted':
+      return { ...state, diagnosisRun: { status: 'running', continuing: action.continuing } };
+
+    case 'diagnosisSucceeded':
+      return {
+        ...state,
+        diagnosisRun: {
+          status: 'succeeded',
+          result: action.result,
+          pendingContinuation: action.result.canContinue ? action.result.resume : null,
+        },
+      };
+
+    case 'diagnosisFailed':
+      return { ...state, diagnosisRun: { status: 'failed', error: action.error } };
+
+    case 'dismissContinuation':
+      return state.diagnosisRun.status === 'succeeded'
+        ? { ...state, diagnosisRun: { ...state.diagnosisRun, pendingContinuation: null } }
+        : state;
+
+    case 'clearDiagnosisRun':
+      return { ...state, diagnosisRun: { status: 'idle' } };
 
     case 'toggleAnalysis': {
       const analyses: AnalysisSelection = {

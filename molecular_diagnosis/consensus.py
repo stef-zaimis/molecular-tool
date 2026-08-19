@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from collections.abc import Sequence
 
+from molecular_diagnosis.focal import focal_label
 from molecular_diagnosis.constants import (
     BALANCING_EMPTY_LIMIT,
     IUPAC,
@@ -233,13 +234,15 @@ def build_focal_consensus_result(
 def write_consensus_text_report(
     output_path: str | Path,
     *,
-    target_string: str,
+    focal_strings: Sequence[str],
     focal_headers: Sequence[str],
     alignment_length: int,
     consensus_result: ConsensusResult,
     dmc_sites: Sequence[int] | None = None,
 ) -> None:
     output_path = Path(output_path)
+    # One selector renders exactly as the single-string pipeline did.
+    label = focal_label(focal_strings)
 
     kept_index_to_trimmed_position = {
         full_index: trimmed_index + 1
@@ -253,7 +256,7 @@ def write_consensus_text_report(
         file.write("Focal consensus report\n\n")
 
         file.write("Input settings:\n")
-        file.write(f"Focal identifier string: {target_string}\n")
+        file.write(f"Focal identifier string: {label}\n")
         file.write(f"Input focal sequences: {len(focal_headers)}\n")
         file.write(f"Original alignment length: {alignment_length}\n\n")
 
@@ -313,12 +316,12 @@ def write_consensus_text_report(
             file.write("None\n\n")
 
         file.write("Untrimmed focal consensus:\n")
-        file.write(f">{target_string}_focal_consensus_untrimmed\n")
+        file.write(f">{label}_focal_consensus_untrimmed\n")
         file.write(wrap_sequence(consensus_result.untrimmed_sequence))
         file.write("\n\n")
 
         file.write("Trimmed focal consensus:\n")
-        file.write(f">{target_string}_focal_consensus_trimmed\n")
+        file.write(f">{label}_focal_consensus_trimmed\n")
         file.write(wrap_sequence(consensus_result.trimmed_sequence))
         file.write("\n\n")
 

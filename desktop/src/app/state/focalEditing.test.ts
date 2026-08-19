@@ -19,6 +19,17 @@ function run(state: AppState, actions: readonly AppAction[]): AppState {
 
 const strings = (state: AppState) => state.focalSets[0].strings;
 
+/** A successfully loaded FASTA, as the Python backend reports one. */
+const LOADED_FASTA = {
+  path: '/tmp/x.fasta',
+  headers: ['a'],
+  sequenceCount: 1,
+  alignmentLength: 4,
+  headerLineCount: 1,
+  duplicateHeaderCount: 0,
+  alphabet: ['A', 'C', 'G', 'T'],
+};
+
 describe('focal set — add and remove', () => {
   it('adds a string in add mode', () => {
     const { state, focalSetId } = setup();
@@ -186,19 +197,37 @@ describe('focal edit mode', () => {
 });
 
 describe('navigation gates', () => {
-  it('blocks the workspace until a FASTA is selected', () => {
+  it('blocks the workspace until a FASTA is selected AND has loaded', () => {
     const { state } = setup();
     expect(state.draft.analyses.molecularDiagnosis).toBe(true);
     expect(canEnterWorkspace(state)).toBe(false);
 
-    const withFasta = appReducer(state, { type: 'setFastaPath', path: '/tmp/x.fasta' });
-    expect(canEnterWorkspace(withFasta)).toBe(true);
+    // Choosing a path is not enough: the backend must have accepted the file.
+    const chosen = appReducer(state, { type: 'setFastaPath', path: '/tmp/x.fasta' });
+    expect(canEnterWorkspace(chosen)).toBe(false);
+
+    const loaded = appReducer(chosen, { type: 'alignmentLoaded', data: LOADED_FASTA });
+    expect(canEnterWorkspace(loaded)).toBe(true);
+  });
+
+  it('blocks the workspace when the FASTA failed backend validation', () => {
+    const { state } = setup();
+    const next = run(state, [
+      { type: 'setFastaPath', path: '/tmp/ragged.fasta' },
+      {
+        type: 'alignmentFailed',
+        path: '/tmp/ragged.fasta',
+        error: { code: 'FASTA_NOT_ALIGNED', message: 'Not aligned.' },
+      },
+    ]);
+    expect(canEnterWorkspace(next)).toBe(false);
   });
 
   it('blocks the workspace when Molecular Diagnosis is not selected', () => {
     const { state } = setup();
     const next = run(state, [
       { type: 'setFastaPath', path: '/tmp/x.fasta' },
+      { type: 'alignmentLoaded', data: LOADED_FASTA },
       { type: 'toggleAnalysis', analysis: 'molecularDiagnosis' },
     ]);
     expect(canEnterWorkspace(next)).toBe(false);
@@ -208,10 +237,7 @@ describe('navigation gates', () => {
     const { state } = setup();
     const loaded = run(state, [
       { type: 'setFastaPath', path: '/tmp/x.fasta' },
-      {
-        type: 'alignmentLoaded',
-        data: { path: '/tmp/x.fasta', headers: ['a'], duplicateCount: 0 },
-      },
+      { type: 'alignmentLoaded', data: LOADED_FASTA },
     ]);
     expect(loaded.alignment.status).toBe('loaded');
 

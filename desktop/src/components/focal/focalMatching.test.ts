@@ -159,9 +159,9 @@ describe('validateFocalString', () => {
     expect(validateFocalString('   ')).toEqual({ kind: 'empty' });
   });
 
-  it("rejects ';' inside a single entry, since it is the display separator", () => {
-    expect(validateFocalString('Leptacis;Synopeas')).toEqual({ kind: 'containsSeparator' });
-    expect(validateFocalString('Leptacis;')).toEqual({ kind: 'containsSeparator' });
+  it("accepts ';' inside a single entry: the separator is rendered, not stored", () => {
+    expect(validateFocalString('Leptacis;Synopeas')).toBeNull();
+    expect(validateFocalString('Leptacis;')).toBeNull();
   });
 
   it('rejects a duplicate of an existing entry', () => {
@@ -177,7 +177,7 @@ describe('validateFocalString', () => {
   });
 
   it('gives a readable message for every problem kind', () => {
-    for (const kind of ['empty', 'containsSeparator', 'duplicate'] as const) {
+    for (const kind of ['empty', 'duplicate'] as const) {
       expect(describeFocalStringProblem({ kind })).toMatch(/\S/);
     }
   });

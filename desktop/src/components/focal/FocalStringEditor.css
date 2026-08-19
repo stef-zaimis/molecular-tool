@@ -48,11 +48,14 @@
   font-family: var(--font-mono);
   font-size: var(--fs-token);
   line-height: 1.55;
-  white-space: pre-wrap;
-  overflow-wrap: break-word;
-  word-break: break-word;
-  overflow-y: auto;
-  overflow-x: hidden;
+  /*
+   * A large focal set must stay reachable without the box growing without
+   * bound: the box height is fixed (and user-resizable), entries wrap, and the
+   * content scrolls in both axes when it still does not fit.
+   */
+  white-space: normal;
+  overflow-wrap: anywhere;
+  overflow: auto;
   /* Entries can be selected and copied even though they cannot be edited. */
   user-select: text;
 }
@@ -64,6 +67,12 @@
 
 .focal-editor__entry {
   white-space: normal;
+}
+
+/* An entry never breaks mid-token unless it has to, so the separators stay
+   readable as separators. */
+.focal-token {
+  overflow-wrap: anywhere;
 }
 
 /* ---------------------------------------------------------------- */

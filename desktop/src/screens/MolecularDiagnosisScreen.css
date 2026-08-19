@@ -17,19 +17,41 @@
   overflow: hidden;
 }
 
+/*
+ * Two-pane workspace: the analysis column scrolls on its own while the
+ * alignment pane beside it stays put. The window itself never scrolls, and the
+ * tab strip above is outside this component, so navigation stays in place.
+ *
+ * Tooltips are portalled to <body>, so making this a scroll container cannot
+ * clip them the way it did before they were portalled.
+ */
 .diagnosis__left {
   position: relative;
   z-index: 1;
   flex: 0 0 var(--w-left-panel);
   width: var(--w-left-panel);
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   padding-top: 24px;
-  /* No overflow clipping here: it used to cut off anything that reached past
-     the panel edge. Tooltips are portalled, so nothing needs to escape a
-     scroll container any more. */
-  overflow: visible;
+  /* Room to scroll the last result clear of the bottom edge. */
+  padding-bottom: 72px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* Anchoring would otherwise jump the pane when a result panel appears. */
+  overflow-anchor: none;
+  /*
+   * A transparent right border insets the scrollbar from the pane edge so it
+   * does not sit flush against the alignment viewer rail. Border-box sizing
+   * keeps the pane the same overall width, so nothing else moves.
+   */
+  border-right: 10px solid transparent;
+}
+
+/* Rows must not be squeezed by the flex column once it scrolls. */
+.diagnosis__left > * {
+  flex: 0 0 auto;
 }
 
 /* ---------------------------------------------------------------- */

@@ -16,6 +16,7 @@ from molecular_diagnosis.sequence_subsets import (
     write_sequence_subset_excel_report,
 )
 from molecular_diagnosis.core import find_best_five_site_sets, find_dmc_information
+from molecular_diagnosis.focal import FocalSelector, normalise_focal_strings
 from molecular_diagnosis.excel import write_excel_report, write_punishment_excel_report
 from molecular_diagnosis.fasta_io import (
     parse_fasta,
@@ -30,11 +31,11 @@ from molecular_diagnosis.utils import next_available_filename
 
 def load_inputs(
     fasta_path: str | Path,
-    target_string: str,
+    focal_strings: FocalSelector,
     output_dir: str | Path,
 ) -> tuple[
     Path,
-    str,
+    list[str],
     Path,
     dict[str, str],
     int,
@@ -42,14 +43,14 @@ def load_inputs(
     list[str],
 ]:
     fasta_path_text = str(fasta_path).strip()
-    target_string = str(target_string).strip()
     output_dir_text = str(output_dir).strip()
 
     if not fasta_path_text:
         raise ValueError("No FASTA file selected.")
 
-    if not target_string:
-        raise ValueError("No identifier string entered.")
+    # Keeps the original wording for the "nothing supplied" case, and keeps
+    # the original order in which these three errors fire.
+    selectors = normalise_focal_strings(focal_strings)
 
     if not output_dir_text:
         raise ValueError("No output directory selected.")
@@ -74,12 +75,12 @@ def load_inputs(
 
     focal_headers, non_focal_headers = split_focal_headers(
         sequences=sequences,
-        target_string=target_string,
+        focal_strings=selectors,
     )
 
     return (
         fasta_path,
-        target_string,
+        selectors,
         output_dir,
         sequences,
         alignment_length,
@@ -90,7 +91,7 @@ def load_inputs(
 
 def run_pipeline_core(
     fasta_path: str | Path,
-    target_string: str,
+    focal_strings: FocalSelector,
     output_dir: str | Path,
     *,
     include_ambiguous_dmc_bd: bool = False,
@@ -103,7 +104,7 @@ def run_pipeline_core(
 ) -> PipelineResult:
     (
         fasta_path,
-        target_string,
+        selectors,
         output_dir,
         sequences,
         alignment_length,
@@ -111,7 +112,7 @@ def run_pipeline_core(
         non_focal_headers,
     ) = load_inputs(
         fasta_path=fasta_path,
-        target_string=target_string,
+        focal_strings=focal_strings,
         output_dir=output_dir,
     )
 
@@ -128,7 +129,7 @@ def run_pipeline_core(
 
     dmc = find_dmc_information(
         sequences=sequences,
-        target_string=target_string,
+        focal_strings=selectors,
         include_ambiguous_dmc_bd=include_ambiguous_dmc_bd,
         include_gappy_consensus_dmc_sites=include_gappy_consensus_dmc_sites,
         min_combination_length=min_combination_length,
@@ -142,7 +143,7 @@ def run_pipeline_core(
         sequences=sequences,
         ref_id=ref_id,
         sites=dmc.unique,
-        target_string=target_string,
+        focal_strings=selectors,
         diagnostic_states=dmc.states,
     )
 
@@ -156,7 +157,7 @@ def run_pipeline_core(
         output_path=txt_output_path,
         fasta_path=fasta_path,
         output_dir=output_dir,
-        target_string=target_string,
+        focal_strings=selectors,
         sequences=sequences,
         alignment_length=alignment_length,
         focal_headers=focal_headers,
@@ -169,7 +170,7 @@ def run_pipeline_core(
 
     write_consensus_text_report(
         output_path=consensus_txt_output_path,
-        target_string=target_string,
+        focal_strings=selectors,
         focal_headers=focal_headers,
         alignment_length=alignment_length,
         consensus_result=consensus_result,
@@ -181,7 +182,7 @@ def run_pipeline_core(
         sequences=sequences,
         ref_id=ref_id,
         full_sites=dmc.unique,
-        target_string=target_string,
+        focal_strings=selectors,
         best_gap_sites=five_site_result.best_gap_sites,
         best_avg_sites=five_site_result.best_avg_sites,
         diagnostic_states=dmc.states,
@@ -197,12 +198,12 @@ def run_pipeline_core(
 
 def run_punishment_core(
     fasta_path: str | Path,
-    target_string: str,
+    focal_strings: FocalSelector,
     output_dir: str | Path,
 ) -> PunishmentPipelineResult:
     (
         _fasta_path,
-        _target_string,
+        _selectors,
         output_dir,
         sequences,
         alignment_length,
@@ -210,7 +211,7 @@ def run_punishment_core(
         _non_focal_headers,
     ) = load_inputs(
         fasta_path=fasta_path,
-        target_string=target_string,
+        focal_strings=focal_strings,
         output_dir=output_dir,
     )
 

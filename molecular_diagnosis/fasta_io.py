@@ -1,5 +1,11 @@
 from pathlib import Path
 
+from molecular_diagnosis.focal import (
+    FocalSelector,
+    normalise_focal_strings,
+    partition_headers,
+)
+
 
 def parse_fasta(path: str | Path) -> dict[str, str]:
     sequences: dict[str, str] = {}
@@ -43,10 +49,16 @@ def validate_aligned_fasta(sequences: dict[str, str]) -> int:
 
 def split_focal_headers(
     sequences: dict[str, str],
-    target_string: str,
+    focal_strings: FocalSelector,
 ) -> tuple[list[str], list[str]]:
-    focal_headers = [header for header in sequences if target_string in header]
-    non_focal_headers = [header for header in sequences if target_string not in header]
+    """
+    Split headers into focal and non-focal.
+
+    Accepts a single selector or a list of them; a header is focal when ANY
+    selector occurs literally within it. See `molecular_diagnosis.focal`.
+    """
+    selectors = normalise_focal_strings(focal_strings)
+    focal_headers, non_focal_headers = partition_headers(list(sequences), selectors)
 
     if not focal_headers:
         raise ValueError("No sequences matched the identifier.")

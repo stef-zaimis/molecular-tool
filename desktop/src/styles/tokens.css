@@ -149,9 +149,19 @@
 
   --border-focus: 2px;
 
-  /* Scrollbars drawn inside panels: light track, dark thumb. */
+  /*
+   * Scrollbars. Taken from the "scroller" element in
+   * docs/02-project-creation.svg: a 2.236-unit (8px) pill with fully rounded
+   * ends, a #2D3541 track and a #7F92AE thumb drawn over it.
+   */
   --w-scrollbar: 8px;
   --w-viewer-scrollbar: 11px;
+  --c-scroll-track: var(--c-chrome);
+  --c-scroll-thumb: var(--c-muted);
+  /* Hover/active stay on the same hue rather than introducing a new colour. */
+  --c-scroll-thumb-hover: #96a7c0;
+  --c-scroll-thumb-active: #b0bed2;
+  --radius-scrollbar: 4px;
 
   /* Right-hand alignment workspace inset from the tab bar / window edge. */
   --inset-workspace-top: 67px;

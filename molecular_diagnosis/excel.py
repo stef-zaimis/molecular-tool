@@ -5,6 +5,11 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.worksheet.worksheet import Worksheet
 
 from molecular_diagnosis.constants import COLORS
+from molecular_diagnosis.focal import (
+    FocalSelector,
+    header_matches_focal,
+    normalise_focal_strings,
+)
 from molecular_diagnosis.core import (
     compute_match_score,
     compute_similarity,
@@ -31,9 +36,10 @@ def build_sheet(
     sequences: dict[str, str],
     ref_id: str,
     sites: list[int] | tuple[int, ...],
-    target_string: str,
+    focal_strings: FocalSelector,
     diagnostic_states: dict[int, str] | None = None,
 ) -> None:
+    selectors = normalise_focal_strings(focal_strings)
     ws = workbook.create_sheet(name)
 
     header = ["ID"] + [site + 1 for site in sites] + ["matches", "% similarity", "avg similarity"]
@@ -52,7 +58,7 @@ def build_sheet(
     rows = []
 
     for sequence_id, sequence in sequences.items():
-        if sequence_id != ref_id and target_string in sequence_id:
+        if sequence_id != ref_id and header_matches_focal(sequence_id, selectors):
             continue
 
         states = extract_sites(sequence, sites)
@@ -99,7 +105,7 @@ def write_excel_report(
     sequences: dict[str, str],
     ref_id: str,
     full_sites: list[int],
-    target_string: str,
+    focal_strings: FocalSelector,
     best_gap_sites: tuple[int, ...] | None,
     best_avg_sites: tuple[int, ...] | None,
     diagnostic_states: dict[int, str] | None = None,
@@ -113,7 +119,7 @@ def write_excel_report(
         sequences=sequences,
         ref_id=ref_id,
         sites=full_sites,
-        target_string=target_string,
+        focal_strings=focal_strings,
         diagnostic_states=diagnostic_states,
     )
 
@@ -124,7 +130,7 @@ def write_excel_report(
             sequences=sequences,
             ref_id=ref_id,
             sites=best_gap_sites,
-            target_string=target_string,
+            focal_strings=focal_strings,
             diagnostic_states=diagnostic_states,
         )
 
@@ -135,7 +141,7 @@ def write_excel_report(
             sequences=sequences,
             ref_id=ref_id,
             sites=best_avg_sites,
-            target_string=target_string,
+            focal_strings=focal_strings,
             diagnostic_states=diagnostic_states,
         )
 

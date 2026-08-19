@@ -159,7 +159,7 @@ def launch_gui() -> None:
             while True:
                 result = run_pipeline_core(
                     fasta_path=fasta_path,
-                    target_string=target_string,
+                    focal_strings=target_string,
                     output_dir=output_dir,
                     include_ambiguous_dmc_bd=include_ambiguous_dmc_bd_var.get(),
                     include_gappy_consensus_dmc_sites=include_gappy_consensus_dmc_sites_var.get(),
@@ -228,7 +228,7 @@ def launch_gui() -> None:
         try:
             result = run_punishment_core(
                 fasta_path=fasta_path,
-                target_string=target_string,
+                focal_strings=target_string,
                 output_dir=output_dir,
             )
 

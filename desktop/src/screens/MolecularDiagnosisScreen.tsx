@@ -5,6 +5,7 @@ import { HelpButton } from '../components/controls/HelpButton';
 import { Checkbox, NumberSpinner, TextField } from '../components/controls/Controls';
 import { MinusCircleIcon, PlusCircleIcon } from '../components/icons/Icons';
 import { NoticeBar } from '../components/controls/NoticeBar';
+import { DiagnosisRunPanel } from '../components/analysis/DiagnosisRunPanel';
 import { useProject } from '../app/state/ProjectContext';
 import { desktop } from '../app/desktopApi';
 import { HELP_TEXT, UNFINISHED_TEXT } from '../copy/helpText';
@@ -29,7 +30,14 @@ function exportFileName(title: string): string {
  * edit is one undo step.
  */
 export function MolecularDiagnosisScreen(): JSX.Element {
-  const { state, dispatch, activeFocalSet, activeFocalHistory, fastaHeaders } = useProject();
+  const {
+    state,
+    dispatch,
+    activeFocalSet,
+    activeFocalHistory,
+    focalValidations,
+    runDiagnosis,
+  } = useProject();
   const config = state.draft.molecularDiagnosis;
   const mode = state.focalMode;
 
@@ -45,8 +53,8 @@ export function MolecularDiagnosisScreen(): JSX.Element {
   const applyPendingString = () => {
     const value = pendingString.trim();
 
-    // ';' is rejected in both modes: it is the display separator, so allowing
-    // it inside an entry would make the rendered set ambiguous.
+    // A ';' is fine inside an entry: the separator between entries is rendered,
+    // never stored, so nothing becomes ambiguous.
     const problem = validateFocalString(
       value,
       mode === 'add' ? activeFocalSet.strings : [],
@@ -90,7 +98,7 @@ export function MolecularDiagnosisScreen(): JSX.Element {
 
   return (
     <div className="diagnosis">
-      <div className="diagnosis__left">
+      <div className="diagnosis__left themed-scroll">
         <div className="diagnosis__row">
           <label className="diagnosis__label" htmlFor="focal-set-title">
             FOCAL SET TITLE
@@ -171,7 +179,7 @@ export function MolecularDiagnosisScreen(): JSX.Element {
         <div className="diagnosis__editor">
           <FocalStringEditor
             strings={activeFocalSet.strings}
-            headers={fastaHeaders}
+            validations={focalValidations}
             onUndo={() => dispatch({ type: 'undoFocalEdit', focalSetId: activeFocalSet.id })}
             onRedo={() => dispatch({ type: 'redoFocalEdit', focalSetId: activeFocalSet.id })}
             canUndo={activeFocalHistory.past.length > 0}
@@ -259,6 +267,16 @@ export function MolecularDiagnosisScreen(): JSX.Element {
             </div>
           </div>
         </div>
+
+        <DiagnosisRunPanel
+          run={state.diagnosisRun}
+          alignment={state.alignment}
+          focalStrings={activeFocalSet.strings}
+          onRun={() => void runDiagnosis(null)}
+          onContinue={(resume) => void runDiagnosis(resume)}
+          onDismissContinuation={() => dispatch({ type: 'dismissContinuation' })}
+          onReveal={(filePath) => void desktop().shell.showItemInFolder(filePath)}
+        />
       </div>
 
       {state.notice && (

@@ -1,0 +1,142 @@
+/*
+ * Run controls and results. Not present in the reference design, so this uses
+ * the existing tokens and control language rather than introducing new styling.
+ */
+
+.run-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 40px;
+  padding-left: calc(var(--w-label-column) + var(--gap-label-field));
+  padding-right: 36px;
+  max-width: var(--w-left-panel);
+}
+
+.run-panel__actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.run-panel__run {
+  height: 44px;
+  padding: 0 22px;
+  background: var(--c-chrome);
+  color: var(--c-text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-base);
+  line-height: 1;
+  box-shadow: var(--shadow-hard-sm);
+  transition: background-color 90ms linear, transform 90ms ease-out, box-shadow 90ms ease-out;
+}
+
+.run-panel__run:hover:not(:disabled) {
+  background: var(--c-chrome-hover);
+}
+
+.run-panel__run:active:not(:disabled) {
+  transform: translate(-1px, 1px);
+  box-shadow: -2px 2px 0 0 var(--c-shadow);
+}
+
+.run-panel__run:disabled {
+  background: var(--c-surface);
+  color: var(--c-muted);
+  box-shadow: none;
+  opacity: 0.6;
+}
+
+.run-panel__run--small {
+  height: 34px;
+  padding: 0 14px;
+  font-size: var(--fs-tooltip);
+}
+
+.run-panel__status {
+  font-size: var(--fs-tooltip);
+  line-height: 1.3;
+  color: var(--c-muted);
+}
+
+.run-panel__result {
+  padding: 12px 16px;
+  background: var(--c-surface);
+}
+
+.run-panel__result--error {
+  background: var(--c-chrome);
+}
+
+.run-panel__headline {
+  margin: 0;
+  font-size: var(--fs-tooltip);
+  line-height: 1.35;
+  color: var(--c-text);
+}
+
+.run-panel__result--error .run-panel__headline {
+  color: var(--c-token-nomatch);
+}
+
+.run-panel__detail,
+.run-panel__hint {
+  margin: 8px 0 0;
+  font-size: var(--fs-tooltip);
+  line-height: 1.35;
+  color: var(--c-muted);
+}
+
+.run-panel__hint {
+  opacity: 0.85;
+}
+
+.run-panel__outputs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.run-panel__output {
+  padding: 4px 10px;
+  background: var(--c-chrome);
+  color: var(--c-text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-tooltip);
+  line-height: 1.2;
+}
+
+.run-panel__output:hover {
+  background: var(--c-chrome-hover);
+  color: var(--c-token-match);
+}
+
+.run-panel__continuation {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--c-bg);
+}
+
+.run-panel__continuation-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.run-panel__dismiss {
+  padding: 6px 12px;
+  background: var(--c-bg);
+  color: var(--c-text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-tooltip);
+  line-height: 1;
+}
+
+.run-panel__dismiss:hover {
+  background: var(--c-bg-hover);
+}

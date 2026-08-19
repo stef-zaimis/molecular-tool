@@ -11,6 +11,15 @@ import type { DesktopApi } from '../preload';
  * It is a no-op, never a simulation: nothing here pretends to resize a window
  * or open a file dialog.
  */
+/** Uniform "there is no backend here" answer for the browser fallback. */
+const unavailable = {
+  ok: false as const,
+  error: {
+    code: 'BACKEND_UNAVAILABLE',
+    message: 'The analysis backend is only available in the desktop application.',
+  },
+};
+
 const noopApi: DesktopApi = {
   window: {
     minimize: () => undefined,
@@ -22,13 +31,17 @@ const noopApi: DesktopApi = {
   shell: {
     enterWorkspaceLayout: () => undefined,
     enterLauncherLayout: () => undefined,
+    showItemInFolder: () => Promise.resolve(false),
   },
   dialog: {
     selectFastaFile: () => Promise.resolve(null),
     exportFocalSet: () => Promise.resolve({ ok: false as const, code: 'NO_DESKTOP_RUNTIME' }),
   },
-  fasta: {
-    readHeaders: () => Promise.resolve({ ok: false as const, code: 'NO_DESKTOP_RUNTIME' }),
+  analysis: {
+    ping: () => Promise.resolve(unavailable),
+    loadFasta: () => Promise.resolve(unavailable),
+    validateFocalStrings: () => Promise.resolve(unavailable),
+    runMolecularDiagnosis: () => Promise.resolve(unavailable),
   },
 };
 

@@ -98,24 +98,47 @@ input {
   border: 0;
 }
 
-/* Panel scrollbars: light track, dark thumb, matching the mockups. */
-.themed-scroll {
-  scrollbar-width: thin;
-  scrollbar-color: var(--c-muted) transparent;
-}
-
+/*
+ * Panel scrollbars.
+ *
+ * Modelled on the "scroller" artwork in docs/02-project-creation.svg: an 8px
+ * pill with fully rounded ends, a dark track and a lighter thumb over it. The
+ * track is inset top and bottom, as it is in the design, so it reads as a rail
+ * inside the panel rather than a browser chrome edge.
+ *
+ * NOTE: the standard scrollbar-width / scrollbar-color properties are
+ * deliberately NOT set. In modern Chromium they take precedence over the
+ * ::-webkit-scrollbar pseudo-elements, which would discard the rounded thumb
+ * and give us the default scrollbar this design is trying to avoid.
+ */
 .themed-scroll::-webkit-scrollbar {
   width: var(--w-scrollbar);
   height: var(--w-scrollbar);
 }
 
 .themed-scroll::-webkit-scrollbar-track {
-  background: transparent;
+  background: var(--c-scroll-track);
+  border-radius: var(--radius-scrollbar);
+  margin: 6px 0;
 }
 
 .themed-scroll::-webkit-scrollbar-thumb {
-  background: var(--c-muted);
-  border-radius: var(--radius-none);
+  background: var(--c-scroll-thumb);
+  border-radius: var(--radius-scrollbar);
+  /* Keeps the thumb grabbable on a very long page. */
+  min-height: 28px;
+}
+
+.themed-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--c-scroll-thumb-hover);
+}
+
+.themed-scroll::-webkit-scrollbar-thumb:active {
+  background: var(--c-scroll-thumb-active);
+}
+
+.themed-scroll::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 /* Placeholder body for a selected analysis that has no workspace yet. */

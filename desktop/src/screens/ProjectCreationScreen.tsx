@@ -30,16 +30,21 @@ export function ProjectCreationScreen(): JSX.Element {
   const { state, dispatch, chooseFastaFile } = useProject();
   const { draft, alignment } = state;
 
-  // Two independent gates, reported separately so the reason is never a guess.
+  // Independent gates, reported separately so the reason is never a guess.
   const hasFasta = draft.fastaPath !== null;
+  const fastaLoaded = alignment.status === 'loaded';
   const hasAnalysis = draft.analyses.molecularDiagnosis;
   const canContinue = canEnterWorkspace(state);
 
-  const continueBlockedReason = hasFasta
-    ? hasAnalysis
-      ? undefined
-      : 'Select Molecular Diagnosis to continue — it is the only analysis workspace in this build.'
-    : 'Select a FASTA file to continue.';
+  const continueBlockedReason = !hasFasta
+    ? 'Select a FASTA file to continue.'
+    : alignment.status === 'loading'
+      ? 'Waiting for the FASTA to finish loading.'
+      : !fastaLoaded
+        ? 'This FASTA could not be used. Select a valid aligned FASTA to continue.'
+        : hasAnalysis
+          ? undefined
+          : 'Select Molecular Diagnosis to continue — it is the only analysis workspace in this build.';
 
   const goToWorkspace = () => {
     if (!canContinue) return;
@@ -89,13 +94,14 @@ export function ProjectCreationScreen(): JSX.Element {
               }`}
               role="status"
             >
-              {alignment.status === 'loading' && 'Reading FASTA headers...'}
+              {alignment.status === 'loading' && 'Parsing and validating the FASTA...'}
               {alignment.status === 'loaded' &&
-                `${alignment.data.headers.length} sequence headers read` +
-                  (alignment.data.duplicateCount > 0
-                    ? ` (${alignment.data.duplicateCount} duplicate headers)`
+                `${alignment.data.sequenceCount} sequences, ` +
+                  `alignment length ${alignment.data.alignmentLength}` +
+                  (alignment.data.duplicateHeaderCount > 0
+                    ? ` (${alignment.data.duplicateHeaderCount} duplicate headers collapsed)`
                     : '')}
-              {alignment.status === 'failed' && `Could not read the file: ${alignment.message}`}
+              {alignment.status === 'failed' && alignment.error.message}
             </p>
           )}
 

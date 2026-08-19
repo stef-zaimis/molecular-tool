@@ -1,38 +1,61 @@
 import { DownloadIcon, RedoIcon, UndoIcon } from '../icons/Icons';
 import { IconButton } from '../controls/Controls';
-import { TOKEN_SEPARATOR, evaluateFocalTokens } from './focalMatching';
+import { TOKEN_SEPARATOR } from './focalMatching';
+import type { FocalStringValidation } from '../../backendContract';
 import './FocalStringEditor.css';
 
 interface FocalStringEditorProps {
   /** The focal set. An ARRAY is the source of truth — never a joined string. */
   readonly strings: readonly string[];
-  /** Known FASTA headers, or null when none are loaded (=> neutral tokens). */
-  readonly headers: readonly string[] | null;
+  /**
+   * Backend verdict per entry, aligned by index, or null when nothing has been
+   * validated yet. Null renders neutral: "cannot say", not "no match".
+   */
+  readonly validations: readonly FocalStringValidation[] | null;
   readonly onUndo: () => void;
   readonly onRedo: () => void;
   readonly canUndo: boolean;
   readonly canRedo: boolean;
   readonly onExport: () => void;
   readonly canExport: boolean;
-  /** Shown in place of tokens when the set is empty. */
+  /** Shown in place of entries when the set is empty. */
   readonly emptyHint?: string;
 }
 
+type EntryState = 'match' | 'noMatch' | 'neutral';
+
+function entryState(validation: FocalStringValidation | undefined): EntryState {
+  if (!validation) return 'neutral';
+  return validation.matched ? 'match' : 'noMatch';
+}
+
+function entryTitle(entry: string, validation: FocalStringValidation | undefined): string {
+  if (!validation) return `${entry} — select a FASTA file to validate this string`;
+  if (validation.matched) {
+    const count = validation.matchCount;
+    return `${entry} — matches ${count} header${count === 1 ? '' : 's'}`;
+  }
+  return `${entry} — matches no header in this FASTA`;
+}
+
 /**
- * The focal-set display from docs/02-project-creation.svg.
+ * The focal-set display.
  *
  * READ-ONLY BY DESIGN. Entries are added and removed through the `+`/`−` modes
- * and the STRING field, and reverted through undo/redo. It previously wrapped a
- * textarea whose text was tokenised on every keystroke, which made a joined
- * string the de-facto source of truth and left half-typed entries in the set.
- * The array is now authoritative and this component only renders it, so there
- * is no string-splitting path that can corrupt the set.
+ * and the STRING field, and reverted through undo/redo.
  *
- * The ';' between entries is a separator glyph, not data.
+ * The `;` between entries is a RENDERED SEPARATOR, not stored data and not an
+ * editable character. That is what lets an entry legitimately contain a `;`
+ * without the display becoming ambiguous — the separator is a distinct element
+ * in its own colour, and each entry is one span carrying its own state.
+ *
+ * Colours come from the backend (`validateFocalStrings`), which runs the same
+ * matcher the analysis uses, so they cannot disagree with the sequences the
+ * run will actually select.
  */
 export function FocalStringEditor({
   strings,
-  headers,
+  validations,
   onUndo,
   onRedo,
   canUndo,
@@ -41,9 +64,8 @@ export function FocalStringEditor({
   canExport,
   emptyHint = 'No focal strings yet.',
 }: FocalStringEditorProps): JSX.Element {
-  const tokens = evaluateFocalTokens(strings, headers);
-  const matched = tokens.filter((token) => token.state === 'match').length;
-  const unmatched = tokens.filter((token) => token.state === 'noMatch').length;
+  const matched = validations?.filter((entry) => entry.matched).length ?? 0;
+  const unmatched = validations ? validations.length - matched : 0;
 
   return (
     <div className="focal-editor">
@@ -55,26 +77,27 @@ export function FocalStringEditor({
 
       <div className="focal-editor__box">
         <div className="focal-editor__content themed-scroll">
-          {tokens.length === 0 ? (
+          {strings.length === 0 ? (
             <span className="focal-editor__empty">{emptyHint}</span>
           ) : (
-            tokens.map((token, index) => (
-              <span key={`${token.text}-${index}`} className="focal-editor__entry">
-                <span
-                  className={`focal-token focal-token--${token.state}`}
-                  title={
-                    token.state === 'neutral'
-                      ? 'Select a FASTA file to validate this string'
-                      : `${token.matchCount} matching header${token.matchCount === 1 ? '' : 's'}`
-                  }
-                >
-                  {token.text}
+            strings.map((entry, index) => {
+              const validation = validations?.[index];
+              return (
+                <span key={`${entry}-${index}`} className="focal-editor__entry">
+                  <span
+                    className={`focal-token focal-token--${entryState(validation)}`}
+                    title={entryTitle(entry, validation)}
+                  >
+                    {entry}
+                  </span>
+                  {index < strings.length - 1 && (
+                    <span className="focal-editor__separator" aria-hidden="true">
+                      {TOKEN_SEPARATOR}{' '}
+                    </span>
+                  )}
                 </span>
-                {index < tokens.length - 1 && (
-                  <span className="focal-editor__separator">{TOKEN_SEPARATOR} </span>
-                )}
-              </span>
-            ))
+              );
+            })
           )}
         </div>
       </div>
@@ -89,8 +112,8 @@ export function FocalStringEditor({
       </div>
 
       <p className="sr-only" aria-live="polite">
-        {headers === null
-          ? `${strings.length} focal strings. No FASTA loaded, so strings cannot be validated.`
+        {validations === null
+          ? `${strings.length} focal strings. Not validated against a FASTA yet.`
           : `${strings.length} focal strings. ${matched} match at least one header, ${unmatched} match none.`}
       </p>
     </div>

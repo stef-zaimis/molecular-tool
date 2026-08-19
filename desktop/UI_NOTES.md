@@ -6,9 +6,8 @@ This file is where the uncertainty lives. If something in the code looks like a
 decision, the reasoning is here; if something is unresolved, it is in §10 rather
 than hidden behind a plausible-looking implementation.
 
-Scope of this phase: **UI only**. No Python was modified, no backend transport
-exists, and no analysis can be executed. `python main.py` still launches the
-existing Tkinter application, unchanged.
+Scope: the UI **and** its integration with the Python backend. Molecular
+Diagnosis now runs end to end through a child-process service; see §13.
 
 Reference material: `docs/02-project-creation.svg` (newest, authoritative for
 the project-creation screen), plus `docs/01-launcher.png`,
@@ -17,8 +16,11 @@ reference for the existing Python: `REPO_MAP.md` at the repo root.
 
 > **Pass 2 (interaction semantics)** reworked navigation gating, focal-set
 > editing, the DNC steppers, tooltip stacking, and replaced every hand-drawn
-> icon with artwork extracted from the design SVG. Sections marked *(pass 2)*
-> describe current behaviour; anything contradicting them is stale.
+> icon with artwork extracted from the design SVG.
+>
+> **Pass 3 (backend integration)** wired the frontend to Python over a
+> child-process JSON service. Several pass-1 and pass-2 notes are now
+> superseded — §13 is authoritative where they disagree.
 
 ---
 
@@ -444,3 +446,117 @@ no changes to any Python file. The known-stale Python test
 (`tests/test_core.py::test_find_dmc_information`) was left failing exactly as
 REPO_MAP §9 documents — Python baseline before and after this work is
 **1 failed, 18 passed**.
+
+---
+
+## 13. Backend integration (pass 3)
+
+**Architecture.** Electron main spawns `python -m molecular_diagnosis.service`
+as a child process and talks to it in newline-delimited JSON over stdin/stdout.
+The renderer never spawns anything and never sees the scientific code: it calls
+`window.desktop.analysis.*`, which the preload forwards to main, which forwards
+to the child. `desktop/src/backendContract.ts` holds the shapes that actually
+cross that boundary (as opposed to `contract.ts`, which still describes the
+wider future architecture).
+
+stdout is protocol-only. The service redirects its own `sys.stdout` to stderr
+so a stray `print` in any library cannot corrupt the stream; stderr is captured
+by the bridge and attached to failures as diagnostics.
+
+**Superseded notes**
+- Focal green/red is no longer computed in TypeScript. It comes from
+  `validateFocalStrings`, which runs the same matcher the analysis uses, so the
+  colours cannot disagree with which sequences a run will select.
+  `src/fixtures/mockHeaders.ts` is now a **test fixture only**.
+- FASTA loading no longer uses a Node header reader. `loadFasta` parses and
+  validates through `fasta_io.parse_fasta` / `validate_aligned_fasta`.
+- `;` inside a focal entry is now **allowed** (pass 2 rejected it). The
+  separator between entries is a rendered element, never a stored character, so
+  an entry containing `;` is unambiguous. There is a test for it on both sides.
+- Entering the workspace now also requires the FASTA to have **loaded and
+  validated**, not merely to have been chosen. A ragged file blocks Continue.
+
+**Focal-set semantics.** `molecular_diagnosis/focal.py` is the single matcher.
+A header is focal when ANY selector occurs literally within it (OR), matching
+is case-sensitive substring containment, selectors are trimmed and deduplicated
+preserving order, and an empty selector is rejected rather than silently
+matching everything. The four places that previously wrote
+`target_string in header` by hand all route through it now.
+
+**Additions with no counterpart in the design**
+- A **Run Molecular Diagnosis** button and result panel. The design shows no way
+  to start an analysis, and one is required to reach the pipeline at all. Styled
+  in the existing language.
+- A **continuation prompt**. When the search stops only because it hit the
+  maximum candidate size, the panel offers to continue from the next size. The
+  decision is the user's; the continuation state itself is an opaque blob
+  produced by the backend and handed straight back, so a continuation resumes
+  rather than restarts.
+
+**Assumptions**
+- **Output directory** is the folder containing the selected FASTA. Python
+  requires one and the design has no control for it. Each run writes a fresh
+  numbered set (`DMCs_output(2).txt`, ...) because `next_available_filename`
+  never overwrites — so a three-step continuation leaves three sets of files.
+  That is pre-existing pipeline behaviour, not new.
+- **Interpreter resolution**: `MOLECULAR_TOOL_PYTHON`, else the project
+  `.venv`, else `python`/`python3` on PATH. `MOLECULAR_TOOL_ROOT` overrides the
+  repo root. Packaging a bundled interpreter is not addressed.
+- **Multiple FASTA files** remain unimplemented, per the brief.
+
+**Known gaps**
+- No progress reporting and no cancellation: the service answers one request at
+  a time and a long search cannot be interrupted. The UI stays responsive
+  because the work is in another process, but it cannot show progress.
+- `runSequencePunishment` exists in the service and is tested indirectly, but no
+  UI reaches it.
+- The legacy Tkinter `gui.py` had its two pipeline calls renamed to the new
+  `focal_strings=` keyword so it keeps working while it is being sunset. No
+  Tkinter architecture was ported into the new code.
+
+---
+
+## 14. Parity and workspace scrolling (pass 4)
+
+**Parity verified.** `tests/test_parity.py` runs `tests/parity_driver.py` twice —
+once against the current tree, once against a read-only `git worktree` of the
+pre-integration commit — and diffs the results. With a single focal selector the
+two agree on focal/non-focal selection, every `DMCResult` field, five-site
+optimisation, consensus, the DMC and consensus text reports, the logical
+contents of `comparison_output.xlsx`, and continuation/resume. Two further tests
+drive `service.dispatch(...)` — the route Electron actually takes — against the
+same baseline.
+
+The workbook comparison is logical, not byte-wise: sheet names, cell values,
+number formats, bold, fill colours, alignment, freeze panes, auto-filter and
+column widths. The xlsx zip carries timestamps, so bytes are not stable.
+
+**Search semantics were not touched.** `min_combination_length` still does not
+raise the starting length, and the early stop still fires at the first
+productive length at or above the minimum. There is a parity test asserting
+exactly that (`test_parity_non_default_min_and_max`).
+
+**Scrolling.** The Molecular Diagnosis page is now a two-pane workspace: the
+analysis column (`.diagnosis__left`) scrolls on its own with 72px of bottom
+padding, while the alignment pane beside it and the tab strip above it stay
+put. The window itself never scrolls. Verified by measurement, not by eye: the
+viewer's viewport position is unchanged at scroll top and scroll bottom, the
+document never overflows, and a tall window produces no scrollbar at all.
+
+**Scrollbar** is modelled on the `scroller` element in
+`docs/02-project-creation.svg`: 8px wide (2.236 design units), fully rounded
+pill, `#2D3541` track inset 6px top and bottom, `#7F92AE` thumb, with hover and
+active tints on the same hue. `scrollbar-width` / `scrollbar-color` are
+deliberately unset — in current Chromium they override the
+`::-webkit-scrollbar` pseudo-elements and would restore the default scrollbar.
+
+A 10px transparent right border insets the scrollbar from the pane edge so it
+does not sit flush against the alignment viewer's own rail; the two are
+inverses of each other and read as one bar when they touch. The viewer rail
+itself was left alone — it belongs to the future viewer.
+
+**Output directory remains different from Tkinter.** Tkinter asked for an output
+directory (Browse, or "Use FASTA Location"); the new UI always uses the folder
+containing the FASTA, because the current design has no output-directory
+control. This is a deliberate deviation, not a parity failure, and was not
+redesigned in this pass.
