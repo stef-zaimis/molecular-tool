@@ -138,7 +138,7 @@ export function Checkbox({ checked, onChange, label, disabled = false }: Checkbo
       />
       <label className="checkbox__label" htmlFor={id}>
         <span className="checkbox__box" aria-hidden="true">
-          {checked && <CheckIcon size={40} className="checkbox__check" />}
+          {checked && <CheckIcon size={33} className="checkbox__check" />}
         </span>
         <span className="checkbox__text">{label}</span>
       </label>
@@ -159,8 +159,12 @@ interface NumberSpinnerProps {
 }
 
 /**
- * Numeric field with the stacked-triangle stepper from the mockups.
- * The native spin buttons are hidden so the custom control is the only affordance.
+ * Numeric field with the stepper from the design.
+ *
+ * ONE arrow-pair glyph, exactly as drawn: the up and down triangles are a
+ * single piece of artwork, with two transparent hit areas laid over its halves.
+ * A previous version rendered the glyph twice and cropped each copy, which read
+ * as two stacked spinners.
  */
 export function NumberSpinner({
   value,
@@ -186,29 +190,24 @@ export function NumberSpinner({
           if (!Number.isNaN(parsed)) onChange(clamp(parsed));
         }}
       />
-      <span className="spinner__buttons">
+      <span className="spinner__stepper">
+        <SpinnerArrowsIcon size={25} className="spinner__glyph" />
         <button
           type="button"
-          className="spinner__step"
+          className="spinner__hit spinner__hit--up"
           aria-label={`Increase ${ariaLabel}`}
           tabIndex={-1}
+          disabled={value >= max}
           onClick={() => onChange(clamp(value + 1))}
-        >
-          <span className="spinner__glyph spinner__glyph--up">
-            <SpinnerArrowsIcon size={22} />
-          </span>
-        </button>
+        />
         <button
           type="button"
-          className="spinner__step"
+          className="spinner__hit spinner__hit--down"
           aria-label={`Decrease ${ariaLabel}`}
           tabIndex={-1}
+          disabled={value <= min}
           onClick={() => onChange(clamp(value - 1))}
-        >
-          <span className="spinner__glyph spinner__glyph--down">
-            <SpinnerArrowsIcon size={22} />
-          </span>
-        </button>
+        />
       </span>
     </div>
   );

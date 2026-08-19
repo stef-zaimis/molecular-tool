@@ -26,8 +26,29 @@ const desktopApi = {
   dialog: {
     /** Returns the chosen absolute path, or null if the user cancelled. */
     selectFastaFile: (): Promise<string | null> => ipcRenderer.invoke('dialog:select-fasta-file'),
+    /** Writes the focal set to a user-chosen .txt file, one entry per line. */
+    exportFocalSet: (payload: {
+      suggestedName: string;
+      lines: readonly string[];
+    }): Promise<ExportResult> => ipcRenderer.invoke('dialog:export-focal-set', payload),
+  },
+  fasta: {
+    /**
+     * Header lines only. Reads no residues and performs no analysis — see the
+     * handler in main.ts. Used to validate focal strings against the real file.
+     */
+    readHeaders: (filePath: string): Promise<ReadHeadersResult> =>
+      ipcRenderer.invoke('fasta:read-headers', filePath),
   },
 } as const;
+
+export type ReadHeadersResult =
+  | { readonly ok: true; readonly path: string; readonly headers: string[]; readonly duplicateCount: number }
+  | { readonly ok: false; readonly code: string; readonly message?: string };
+
+export type ExportResult =
+  | { readonly ok: true; readonly path: string }
+  | { readonly ok: false; readonly code: string; readonly message?: string };
 
 export type DesktopApi = typeof desktopApi;
 

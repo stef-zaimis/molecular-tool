@@ -142,11 +142,11 @@
   background: var(--c-surface-hover);
 }
 
-/* The tick deliberately overhangs the top-right of the box. */
+/* The tick deliberately overhangs the top-right of the box, as in the design. */
 .checkbox__check {
   position: absolute;
-  left: -1px;
-  top: -6px;
+  left: 1px;
+  top: -7px;
   color: var(--c-text);
   pointer-events: none;
 }
@@ -204,41 +204,43 @@
   margin: 0;
 }
 
-.spinner__buttons {
-  flex: 0 0 26px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  padding-right: var(--sp-2);
-}
-
-.spinner__step {
+.spinner__stepper {
+  position: relative;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
-  justify-content: center;
-  height: 15px;
-  overflow: hidden;
+  margin-right: var(--sp-2);
   color: var(--c-muted);
-  transition: color 90ms linear;
 }
 
-.spinner__step:hover {
+.spinner__glyph {
+  display: block;
+  pointer-events: none;
+}
+
+/* Transparent hit areas over each half of the single glyph. */
+.spinner__hit {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 50%;
+  background: none;
+}
+
+.spinner__hit--up {
+  top: 0;
+}
+
+.spinner__hit--down {
+  bottom: 0;
+}
+
+.spinner__stepper:hover {
   color: var(--c-text);
 }
 
-/* One two-triangle glyph, cropped to show only the relevant half per button. */
-.spinner__glyph {
-  display: block;
-  height: 22px;
-  line-height: 0;
-}
-
-.spinner__glyph--up {
-  margin-top: 0;
-}
-
-.spinner__glyph--down {
-  margin-top: -7px;
+.spinner__hit:disabled {
+  cursor: default;
 }
 
 /* ---------------------------------------------------------------- */

@@ -11,53 +11,56 @@
   justify-content: center;
   width: var(--size-help);
   height: var(--size-help);
-  border-radius: var(--radius-round);
-  background: var(--c-surface);
-  color: var(--c-bg);
-  font-family: var(--font-mono);
-  font-size: 20px;
-  font-weight: var(--fw-bold);
-  line-height: 1;
-  transition: background-color 90ms linear, color 90ms linear;
+  /* Two-tone artwork: disc = --icon-bg, question mark = --icon-fg. */
+  --icon-bg: var(--c-surface);
+  --icon-fg: var(--c-bg);
+  transition: none;
 }
 
 .help__dot:hover,
 .help__dot.is-open {
-  background: var(--c-chrome);
-  color: var(--c-text);
+  --icon-bg: var(--c-chrome);
+  --icon-fg: var(--c-text);
 }
 
+/*
+ * Portalled into <body>, so it is immune to ancestor overflow clipping and to
+ * the alignment pane's stacking context. Position comes from the component.
+ */
 .help__tooltip {
-  position: absolute;
-  left: calc(100% + 14px);
-  top: 50%;
-  transform: translateY(-14px);
+  position: fixed;
   z-index: var(--z-tooltip);
 
-  display: block;
   width: 317px;
   padding: 11px 14px 13px;
 
   background: var(--c-chrome);
   color: var(--c-text);
+  font-family: var(--font-mono);
   font-size: var(--fs-tooltip);
   font-weight: var(--fw-regular);
   line-height: var(--lh-tooltip);
   text-align: left;
-  white-space: normal;
+  white-space: pre-line;
   box-shadow: var(--shadow-tooltip);
   pointer-events: none;
 }
 
 /* Pointer notch aimed back at the dot. */
-.help__tooltip::before {
-  content: '';
+.help__notch {
   position: absolute;
-  left: -9px;
-  top: 4px;
   width: 0;
   height: 0;
   border-top: 10px solid transparent;
   border-bottom: 10px solid transparent;
+}
+
+.help__tooltip--right .help__notch {
+  left: -9px;
   border-right: 10px solid var(--c-chrome);
+}
+
+.help__tooltip--left .help__notch {
+  right: -9px;
+  border-left: 10px solid var(--c-chrome);
 }

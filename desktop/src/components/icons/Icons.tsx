@@ -1,250 +1,270 @@
 /**
- * Icon set.
+ * Icons — extracted from the design file, not redrawn.
  *
- * docs/ contained only the three reference screenshots — no exported SVG
- * assets — so every glyph here is hand-drawn to match the reference shapes.
- * House rules, so the set stays coherent:
- *   - single-colour, `currentColor` only
- *   - stroked geometry with round caps/joins, uniform 2px stroke on a 24 grid
- *   - square 24x24 viewBox, visually centred
- *   - no emoji, no third-party icon font
- * Divergences from the mockup are listed in UI_NOTES.md §4.
+ * Every glyph here is the actual vector artwork from
+ * docs/02-project-creation.svg, pulled out by element id, with each shape's
+ * inherited group transforms composed onto the shape itself and the viewBox set
+ * to the artwork's own bounding box. Do not hand-edit the path data; re-extract
+ * from the design file instead, so these cannot drift away from it.
+ *
+ * Colour contract
+ *   Single-tone glyphs paint with `currentColor`.
+ *   Two-tone glyphs (help, plus, minus, download) paint the disc/plate with
+ *   `--icon-bg` and the knocked-out symbol with `--icon-fg`, so a component can
+ *   express selected vs unselected without swapping artwork.
+ *
+ * `size` is the rendered HEIGHT; width follows the artwork's own aspect ratio,
+ * because several of these glyphs are not square in the design.
  */
 
 export interface IconProps {
+  /** Rendered height in px. Width follows the artwork's aspect ratio. */
   readonly size?: number;
   readonly className?: string;
-  /** Stroke width on the 24-unit grid. */
-  readonly strokeWidth?: number;
 }
 
-function svgProps(size: number, className?: string) {
-  return {
-    width: size,
-    height: size,
-    viewBox: '0 0 24 24',
-    fill: 'none' as const,
-    xmlns: 'http://www.w3.org/2000/svg',
-    'aria-hidden': true,
-    focusable: false,
-    className,
-  };
-}
-
-export function MenuIcon({ size = 26, className }: IconProps): JSX.Element {
-  // Non-square by design: the reference glyph measures 35x26 with three 6px bars.
-  const width = Math.round((size * 35) / 26);
+/** Title-bar menu (three bars). Extracted from docs/02-project-creation.svg. */
+export function MenuIcon({ size = 24, className }: IconProps): JSX.Element {
   return (
     <svg
-      width={width}
+      width={size * 1.37491}
       height={size}
-      viewBox="0 0 35 26"
-      fill="none"
+      viewBox="495.1216 3.3073 9.0945 6.6146"
       xmlns="http://www.w3.org/2000/svg"
       aria-hidden
       focusable={false}
       className={className}
     >
-      <g fill="currentColor">
-        <rect x="0" y="0" width="35" height="6" />
-        <rect x="0" y="10" width="35" height="6" />
-        <rect x="0" y="20" width="35" height="6" />
-      </g>
+      <path fill={"currentColor"} d="m 495.79366,7.2866483 7.75127,2.618e-4 c 0,0 0.67117,-0.3559765 0.67117,-0.6711645 0,-0.3151881 -0.66608,-0.6660745 -0.66608,-0.6660745 l -7.76211,-0.00144 c 0,0 -0.66633,0.3508663 -0.66633,0.666335 0,0.3154687 0.67208,0.6720856 0.67208,0.6720856 z" />
+      <path fill={"currentColor"} d="m 495.79366,4.6457083 7.75127,2.618e-4 c 0,0 0.67117,-0.3559765 0.67117,-0.6711645 0,-0.3151881 -0.66608,-0.6660745 -0.66608,-0.6660745 l -7.76211,-0.00144 c 0,0 -0.66633,0.3508663 -0.66633,0.666335 0,0.3154687 0.67208,0.6720856 0.67208,0.6720856 z" />
+      <path fill={"currentColor"} d="m 495.79366,9.921614 7.75127,2.618e-4 c 0,0 0.67117,-0.3559765 0.67117,-0.6711645 0,-0.3151881 -0.66608,-0.6660745 -0.66608,-0.6660745 l -7.76211,-0.00144 c 0,0 -0.66633,0.3508663 -0.66633,0.666335 0,0.3154687 0.67208,0.6720856 0.67208,0.6720856 z" />
     </svg>
   );
 }
 
-/**
- * Solid house with an overhanging roof and a door notch.
- * Traced from the reference glyph, which measures 40x36 with a full-width
- * roof, so this one keeps its own aspect rather than the 24 grid.
- * `size` is the height.
- */
-export function HomeIcon({ size = 36, className }: IconProps): JSX.Element {
-  const width = Math.round((size * 40) / 36);
+/** Home / project page. Extracted from docs/02-project-creation.svg. */
+export function HomeIcon({ size = 24, className }: IconProps): JSX.Element {
   return (
     <svg
-      width={width}
+      width={size * 1.09023}
       height={size}
-      viewBox="0 0 40 36"
-      fill="none"
+      viewBox="12.415 15.609 10.1128 9.2757"
       xmlns="http://www.w3.org/2000/svg"
       aria-hidden
       focusable={false}
       className={className}
     >
-      <g fill="currentColor">
-        <path d="M20 0 40 19H0Z" />
-        <path d="M5 19h30v17H23V24h-7v12H5Z" />
-      </g>
+      <path fill={"currentColor"} d="m 13.62007,24.70425 c -0.130911,-0.188939 -0.118189,-0.06622 -0.118189,-2.074994 v -1.848928 c 0,0 0.853805,-0.742659 1.287408,-1.114962 0.58217,-0.500913 1.132848,-0.973559 1.223715,-1.050315 0.142115,-0.120072 0.514808,-0.440499 0.71861,-0.617881 0.586116,-0.510136 0.680476,-0.584531 0.741434,-0.584531 0.967035,0.730084 1.88628,1.566641 2.812536,2.362881 0.3805,0.332455 1.144345,0.994454 1.144345,0.994454 0,0 0.01568,0.855394 0.01568,1.871006 -1.59e-4,2.062425 0.0091,1.931362 -0.15114,2.09183 -0.156552,0.156552 -0.101508,0.150958 -1.49189,0.151486 -1.043003,3.94e-4 -1.25343,-0.0046 -1.288295,-0.03003 -0.04023,-0.02937 -0.04215,-0.07479 -0.05241,-1.31853 l -0.01089,-1.288072 -0.06664,-0.08248 c -0.13129,-0.162393 -0.112909,-0.159143 -0.903345,-0.159753 -0.404171,-3.07e-4 -0.728439,0.0083 -0.758911,0.02016 -0.06264,0.02451 -0.135366,0.09023 -0.187535,0.169783 -0.03418,0.05225 -0.0384,0.167226 -0.0482,1.342758 -0.01045,1.241309 -0.01237,1.2867 -0.05239,1.316109 -0.03486,0.02551 -0.246022,0.03044 -1.289442,0.03044 -0.540546,-0.02431 -1.393666,0.0085 -1.524574,-0.180517 z m -0.979014,-4.314087 c -0.136241,-0.07191 -0.222732,-0.218516 -0.222732,-0.377365 0,-0.216918 -0.162013,-0.05966 1.790449,-1.738421 0.571817,-0.49167 1.10807,-0.951642 1.191676,-1.022169 0.133848,-0.11286 0.358301,-0.306255 0.79472,-0.684611 0.138435,-0.120038 0.462781,-0.397854 0.54896,-0.470236 0.0295,-0.02475 0.151272,-0.130218 0.270539,-0.234254 0.238775,-0.20828 0.32361,-0.254081 0.470612,-0.254081 0.153466,0 0.179203,0.01703 0.666723,0.440109 0.09525,0.08273 0.22999,0.198673 0.299315,0.257716 0.06927,0.05899 0.203944,0.175282 0.299126,0.258291 0.09515,0.08303 0.230453,0.198953 0.300603,0.257651 0.07007,0.05874 0.16678,0.142841 0.214716,0.186994 0.04785,0.04409 0.09435,0.0803 0.103323,0.08049 0.0091,1.42e-4 0.01617,-0.09012 0.01617,-0.200535 0,-0.173025 0.0067,-0.210905 0.04867,-0.273763 0.09094,-0.136043 0.148863,-0.150216 0.586334,-0.143418 0.373177,0.0053 0.391139,0.0079 0.465827,0.05931 0.133468,0.09153 0.13294,0.08804 0.140283,0.906407 l 0.0067,0.744979 0.35606,0.307131 c 0.195832,0.168923 0.390916,0.33593 0.433534,0.371128 0.04263,0.03518 0.18943,0.16081 0.326248,0.27913 0.136818,0.118306 0.305626,0.263451 0.375106,0.322497 0.358748,0.304855 0.402494,0.363881 0.403793,0.544902 0.0023,0.306791 -0.29959,0.517042 -0.576228,0.401455 -0.04035,-0.01683 -0.279112,-0.207251 -0.530726,-0.423155 -0.84562,-0.725583 -1.680051,-1.442941 -1.853156,-1.593156 -0.499513,-0.432327 -1.003685,-0.859261 -1.503015,-1.291802 -0.399302,-0.349436 -0.561696,-0.482102 -0.590464,-0.482345 -0.01779,-1.59e-4 -0.07272,0.03577 -0.121985,0.07996 -0.04946,0.04409 -0.199141,0.173398 -0.332812,0.287283 -0.341692,0.291124 -0.362624,0.309116 -0.831759,0.714671 -0.231236,0.199912 -0.438385,0.378665 -0.46031,0.397226 -0.30912,0.26167 -2.36217,2.024717 -2.375689,2.040118 -0.05698,0.06488 -0.290922,0.24453 -0.351299,0.269756 -0.112662,0.04704 -0.249117,0.04029 -0.359257,-0.01793 z" />
     </svg>
   );
 }
 
-/** Window minimise. The mockups draw this as a wide chevron/"V", not a dash. */
-export function MinimizeIcon({ size = 24, className, strokeWidth = 2 }: IconProps): JSX.Element {
+/** Window minimise. The design draws this as a V. Extracted from docs/02-project-creation.svg. */
+export function MinimizeIcon({ size = 24, className }: IconProps): JSX.Element {
   return (
-    <svg {...svgProps(size, className)}>
-      <polyline
-        points="3,4 12,20 21,4"
-        stroke="currentColor"
-        strokeWidth={strokeWidth}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+    <svg
+      width={size * 1.08728}
+      height={size}
+      viewBox="470.6219 3.2821 7.3004 6.7141"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden
+      focusable={false}
+      className={className}
+    >
+      <path fill={"currentColor"} d="m 474.15049,9.9731989 c -0.18777,-0.063849 -0.41747,-0.2884505 -0.64428,-0.6299836 -0.0474,-0.071391 -0.11091,-0.1731377 -0.14112,-0.2261048 -0.0302,-0.052967 -0.65979,-1.2030063 -1.39908,-2.5556431 l -1.34416,-2.4593394 0.0208,-0.078055 c 0.067,-0.2511879 0.17713,-0.4931611 0.27874,-0.6127134 0.12766,-0.1502169 0.25482,-0.1673254 0.46706,-0.062841 0.11913,0.05865 0.33572,0.224645 0.46492,0.3563235 0.0546,0.055623 0.0832,0.1073303 1.2365,2.2326359 0.78836,1.4528108 1.18295,2.1720549 1.18761,2.164741 0.004,-0.00602 0.53573,-0.9850865 1.18198,-2.175694 1.31228,-2.4176557 1.1727,-2.1780744 1.36677,-2.3460188 0.15855,-0.1372135 0.31811,-0.237979 0.44383,-0.2803021 0.0294,-0.00989 0.0703,-0.01555 0.11305,-0.015629 0.0913,-1.468e-4 0.14195,0.024776 0.21936,0.107938 0.11349,0.1219142 0.21479,0.3351224 0.29572,0.6223649 l 0.0241,0.08561 -1.36538,2.4978426 c -0.75096,1.3738137 -1.39609,2.5486562 -1.43362,2.6107612 -0.24632,0.4076217 -0.51471,0.6888982 -0.7283,0.7632471 -0.0905,0.03151 -0.15376,0.03173 -0.24456,8.5e-4 z" />
     </svg>
   );
 }
 
-export function MaximizeIcon({ size = 24, className, strokeWidth = 2 }: IconProps): JSX.Element {
+/** Window maximise / restore. Extracted from docs/02-project-creation.svg. */
+export function MaximizeIcon({ size = 24, className }: IconProps): JSX.Element {
   return (
-    <svg {...svgProps(size, className)}>
-      <rect
-        x="4.5"
-        y="4.5"
-        width="15"
-        height="15"
-        stroke="currentColor"
-        strokeWidth={strokeWidth}
-        strokeLinejoin="round"
-      />
+    <svg
+      width={size * 0.96085}
+      height={size}
+      viewBox="483.7891 3.3073 6.3557 6.6146"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden
+      focusable={false}
+      className={className}
+    >
+      <path fill={"currentColor"} d="m 484.23924,9.9148095 c -0.13138,-0.0165 -0.24095,-0.05867 -0.30721,-0.118256 -0.17421,-0.156623 -0.18894,-0.5912097 -0.0396,-1.1695614 l 0.0316,-0.1228636 V 6.6157983 4.7274676 l -0.0359,-0.1435651 c -0.13891,-0.5556897 -0.13137,-0.9544034 0.0214,-1.1278644 0.057,-0.06473 0.14598,-0.107837 0.2768,-0.134054 0.0803,-0.01611 0.34253,-0.01408 0.47204,0.0036 0.13065,0.01788 0.31559,0.05512 0.44833,0.09027 l 0.10539,0.02791 h 1.75611 1.75609 l 0.13965,-0.03553 c 0.32816,-0.0835 0.63109,-0.11756 0.82975,-0.09329 0.25506,0.03115 0.3718,0.122328 0.42844,0.3345861 0.0246,0.09213 0.0303,0.3345856 0.0117,0.4922126 -0.0167,0.1405791 -0.0597,0.3587147 -0.0949,0.4805177 l -0.0266,0.09239 -0.002,1.8901927 -0.002,1.8901922 0.0241,0.08689 c 0.0791,0.284836 0.11838,0.5661507 0.11076,0.7920827 -0.0123,0.3637977 -0.13189,0.5040537 -0.46189,0.5418447 -0.19412,0.02223 -0.53107,-0.01823 -0.84802,-0.101839 l -0.10595,-0.02794 h -1.75712 -1.75712 l -0.1421,0.03564 c -0.2586,0.06486 -0.44111,0.09254 -0.64238,0.09746 -0.0711,0.0017 -0.15613,-2.52e-4 -0.18917,-0.0044 z m 1.38339,-1.3361414 c 0.0444,-0.0068 0.12556,-0.02287 0.1804,-0.03584 l 0.0997,-0.02358 h 1.06644 1.06645 l 0.0805,0.02047 c 0.13983,0.03556 0.27323,0.05416 0.39117,0.05452 0.21146,6.58e-4 0.29628,-0.04439 0.3447,-0.1830836 0.0118,-0.03361 0.0144,-0.06718 0.0141,-0.1824011 -3e-4,-0.152064 -0.0101,-0.225209 -0.0529,-0.3953857 l -0.0233,-0.0928 3e-5,-1.1256354 4e-5,-1.1256374 0.0273,-0.108932 c 0.0409,-0.1629557 0.056,-0.2843247 0.0511,-0.4170957 -0.005,-0.126692 -0.017,-0.1774426 -0.057,-0.2300916 -0.0561,-0.07391 -0.1713,-0.1081401 -0.33638,-0.09995 -0.10878,0.0054 -0.25444,0.0281 -0.36523,0.05691 l -0.0788,0.02049 h -1.0643 -1.0643 l -0.0753,-0.02001 c -0.17542,-0.04658 -0.39826,-0.07036 -0.50302,-0.05369 -0.0828,0.01317 -0.11138,0.02274 -0.15474,0.05173 -0.12315,0.08231 -0.14083,0.3253076 -0.0508,0.6983763 l 0.024,0.09946 v 1.1295254 1.1295244 l -0.0249,0.09837 c -0.0667,0.2646177 -0.0732,0.5057687 -0.0162,0.6175208 0.0633,0.1238786 0.23013,0.1614206 0.52113,0.1172036 z" />
     </svg>
   );
 }
 
-/** Restore-down: two offset frames, shown when the window is maximised. */
-export function RestoreIcon({ size = 24, className, strokeWidth = 2 }: IconProps): JSX.Element {
+/** Window close. Extracted from docs/02-project-creation.svg. */
+export function CloseIcon({ size = 24, className }: IconProps): JSX.Element {
   return (
-    <svg {...svgProps(size, className)}>
-      <g stroke="currentColor" strokeWidth={strokeWidth} strokeLinejoin="round">
-        <rect x="4" y="7.5" width="12" height="12" />
-        <polyline points="8,7.5 8,4 20,4 20,16 16.5,16" fill="none" />
-      </g>
+    <svg
+      width={size * 1.00091}
+      height={size}
+      viewBox="496.3565 3.3073 6.621 6.6146"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden
+      focusable={false}
+      className={className}
+    >
+      <path fill={"currentColor"} d="m 496.62707,9.9110951 c -0.17016,-0.037527 -0.24542,-0.1345615 -0.26694,-0.3440924 -0.0144,-0.1406618 0.0144,-0.3828515 0.072,-0.6056238 l 0.0207,-0.07982 1.13315,-1.1331759 1.13316,-1.1331772 -1.13265,-1.1326756 -1.13265,-1.1326757 -0.0163,-0.05917 c -0.0727,-0.2642503 -0.10017,-0.5631132 -0.0656,-0.7142667 0.0477,-0.2082761 0.17554,-0.2792078 0.48331,-0.2679959 0.13543,0.00497 0.26512,0.024446 0.43532,0.065485 l 0.10562,0.025475 1.1348,1.1345479 1.1348,1.1345491 1.13479,-1.1341564 1.1348,-1.1341553 0.10147,-0.025179 c 0.20181,-0.050099 0.30679,-0.064149 0.48181,-0.064504 0.14334,-2.933e-4 0.16708,0.00166 0.22081,0.018604 0.0777,0.024446 0.13576,0.0637 0.17005,0.1150401 0.0919,0.1375418 0.0908,0.4164847 -0.004,0.8056896 l -0.0228,0.094367 -1.13552,1.135507 -1.13554,1.135507 1.13607,1.1369216 1.13607,1.1369227 0.026,0.1098835 c 0.0895,0.3790905 0.0892,0.6529455 -0.001,0.7871108 -0.0372,0.055373 -0.0843,0.088985 -0.15901,0.1135735 -0.0584,0.019219 -0.0746,0.020638 -0.23185,0.020248 -0.18371,-4.648e-4 -0.2763,-0.012702 -0.48182,-0.063676 l -0.10147,-0.025168 -1.1348,-1.1345313 -1.13481,-1.1345313 -1.13478,1.1345218 -1.13481,1.1345219 -0.0972,0.024848 c -0.17602,0.044989 -0.29575,0.061937 -0.46068,0.065249 -0.11532,0.00225 -0.1665,-1.278e-4 -0.21133,-0.010053 z" />
     </svg>
   );
 }
 
-export function CloseIcon({ size = 24, className, strokeWidth = 2 }: IconProps): JSX.Element {
-  return (
-    <svg {...svgProps(size, className)}>
-      <g stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round">
-        <line x1="4" y1="4" x2="20" y2="20" />
-        <line x1="20" y1="4" x2="4" y2="20" />
-      </g>
-    </svg>
-  );
-}
-
-/** Filled disc with a plus knocked out — matches the STRING row controls. */
-export function PlusCircleIcon({ size = 24, className }: IconProps): JSX.Element {
-  return (
-    <svg {...svgProps(size, className)}>
-      <circle cx="12" cy="12" r="10" fill="currentColor" />
-      <g stroke="var(--icon-knockout, var(--c-bg))" strokeWidth="2.6" strokeLinecap="round">
-        <line x1="12" y1="6.6" x2="12" y2="17.4" />
-        <line x1="6.6" y1="12" x2="17.4" y2="12" />
-      </g>
-    </svg>
-  );
-}
-
-export function MinusCircleIcon({ size = 24, className }: IconProps): JSX.Element {
-  return (
-    <svg {...svgProps(size, className)}>
-      <circle cx="12" cy="12" r="10" fill="currentColor" />
-      <line
-        x1="6.6"
-        y1="12"
-        x2="17.4"
-        y2="12"
-        stroke="var(--icon-knockout, var(--c-bg))"
-        strokeWidth="2.6"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
-/** Import/load: arrow descending into a tray. */
-export function ImportIcon({ size = 24, className }: IconProps): JSX.Element {
-  return (
-    <svg {...svgProps(size, className)}>
-      <path d="M10.6 2.6h2.8v8.1h3.5L12 16.7 7.1 10.7h3.5Z" fill="currentColor" />
-      <path
-        d="M3.4 15.4v4.1a1.6 1.6 0 0 0 1.6 1.6h14a1.6 1.6 0 0 0 1.6-1.6v-4.1"
-        stroke="currentColor"
-        strokeWidth="2.4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-export function UndoIcon({ size = 24, className }: IconProps): JSX.Element {
-  return (
-    <svg {...svgProps(size, className)}>
-      <path
-        d="M8.6 7.4H14a5.6 5.6 0 0 1 0 11.2h-2.4"
-        stroke="currentColor"
-        strokeWidth="2.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path d="M9.6 3.2 4.2 7.4l5.4 4.2Z" fill="currentColor" />
-    </svg>
-  );
-}
-
-export function RedoIcon({ size = 24, className }: IconProps): JSX.Element {
-  return (
-    <svg {...svgProps(size, className)}>
-      <path
-        d="M15.4 7.4H10a5.6 5.6 0 0 0 0 11.2h2.4"
-        stroke="currentColor"
-        strokeWidth="2.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path d="M14.4 3.2l5.4 4.2-5.4 4.2Z" fill="currentColor" />
-    </svg>
-  );
-}
-
-/**
- * Checkbox tick. In the mockups the stroke is heavy and deliberately breaks
- * out past the top-right corner of the box, so it is drawn on an oversized
- * canvas and positioned by the Checkbox component rather than clipped.
- */
+/** Checkbox tick. Extracted from docs/02-project-creation.svg. */
 export function CheckIcon({ size = 24, className }: IconProps): JSX.Element {
   return (
     <svg
-      width={size}
+      width={size * 1.06919}
       height={size}
-      viewBox="0 0 24 24"
-      fill="none"
+      viewBox="109.5446 72.1392 9.2718 8.6717"
       xmlns="http://www.w3.org/2000/svg"
       aria-hidden
       focusable={false}
       className={className}
     >
-      <polyline
-        points="3.4,12.4 9.2,18.6 21.4,2.6"
-        stroke="currentColor"
-        strokeWidth="2.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      <path fill={"currentColor"} d="m 110.97965,79.090106 c -1.45047,-1.679241 -1.48413,-1.721814 -1.41514,-1.790316 0.069,-0.06846 0.10002,-0.05361 1.27485,0.60907 0.66231,0.373582 1.21547,0.66582 1.22927,0.64942 0.0137,-0.0164 0.20188,-0.267534 0.41798,-0.558072 1.42812,-1.920092 3.15859,-3.699403 4.76546,-4.899972 0.37924,-0.283347 1.08401,-0.754718 1.33637,-0.8938 0.15728,-0.08668 0.16159,-0.08701 0.21355,-0.01595 0.0492,0.06728 0.004,0.120751 -0.63531,0.740213 -2.16501,2.100104 -3.90805,4.504299 -5.31006,7.324227 -0.17551,0.353015 -0.29766,0.556385 -0.33396,0.555971 -0.0315,-4.27e-4 -0.72582,-0.774716 -1.54301,-1.720795 z" />
     </svg>
   );
 }
 
-/** Stacked triangles for the number spinner. */
+/** Help dot: disc plus question mark. Extracted from docs/02-project-creation.svg. */
+export function HelpIcon({ size = 24, className }: IconProps): JSX.Element {
+  return (
+    <svg
+      width={size * 1.00000}
+      height={size}
+      viewBox="2.3926 145.3555 8 8"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden
+      focusable={false}
+      className={className}
+    >
+      <circle fill={"var(--icon-bg, currentColor)"} cx="208.58002" cy="77.71347" r="4" transform="translate(-202.18741,71.642043)" />
+      <path fill={"var(--icon-fg, currentColor)"} d="m 5.9844421,150.74328 v -1.38777 h 0.4081645 q 0.522449,0 0.8244898,-0.28571 0.3102049,-0.29388 0.3102049,-0.7755 0,-0.48164 -0.3102049,-0.76735 -0.3020408,-0.29388 -0.8326532,-0.29388 H 5.3640337 v -0.69388 h 1.0204095 q 0.5714291,0 0.987756,0.22041 0.4244896,0.21224 0.6530618,0.60408 0.2367349,0.39184 0.2367349,0.93062 0,0.4653 -0.1959189,0.84081 -0.1959188,0.36735 -0.546939,0.58776 -0.3428576,0.2204 -0.8000006,0.24489 v 0.77552 z m 0.2367356,1.79591 q -0.2122455,0 -0.3510209,-0.13878 -0.1387755,-0.13877 -0.1387755,-0.35101 0,-0.21224 0.1387755,-0.35102 0.1387754,-0.13877 0.3510209,-0.13877 h 0.2448982 q 0.2367349,0 0.3591836,0.13877 0.1306128,0.13061 0.1306128,0.34285 0,0.21225 -0.1387762,0.35918 -0.1387754,0.13878 -0.3510202,0.13878 z" />
+    </svg>
+  );
+}
+
+/** Add mode. Extracted from docs/02-project-creation.svg. */
+export function PlusCircleIcon({ size = 24, className }: IconProps): JSX.Element {
+  return (
+    <svg
+      width={size * 1.00000}
+      height={size}
+      viewBox="-5.5449 145.3555 8 8"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden
+      focusable={false}
+      className={className}
+    >
+      <circle fill={"var(--icon-bg, currentColor)"} cx="208.58002" cy="77.71347" r="4" transform="translate(-7.937494) translate(-202.18741,71.642043)" />
+      <path fill={"var(--icon-fg, currentColor)"} d="m -2.0575941,152.0938 v -2.27219 h -2.2255894 v -0.93219 h 2.2255894 v -2.2722 h 1.0254024 v 2.2722 h 2.2255894 v 0.93219 h -2.2255894 v 2.27219 z" />
+    </svg>
+  );
+}
+
+/** Remove mode. Extracted from docs/02-project-creation.svg. */
+export function MinusCircleIcon({ size = 24, className }: IconProps): JSX.Element {
+  return (
+    <svg
+      width={size * 1.00000}
+      height={size}
+      viewBox="2.3926 145.3555 8 8"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden
+      focusable={false}
+      className={className}
+    >
+      <circle fill={"var(--icon-bg, currentColor)"} cx="208.58002" cy="77.71347" r="4" transform="translate(-202.18741,71.642043)" />
+      <path fill={"currentColor"} d="M 5.8799059,149.8216 H 3.6543165 v -0.93218 h 2.2255894 1.0254024 2.2255894 v 0.93218 H 6.9053083 Z" />
+    </svg>
+  );
+}
+
+/** Export the focal set. Extracted from docs/02-project-creation.svg. */
+export function DownloadIcon({ size = 24, className }: IconProps): JSX.Element {
+  return (
+    <svg
+      width={size * 1.00000}
+      height={size}
+      viewBox="545.3051 59.8908 8.769 8.769"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden
+      focusable={false}
+      className={className}
+    >
+      <rect fill={"var(--icon-bg, currentColor)"} x="545.30511" y="59.790623" width="8.7690001" height="8.7690001" transform="translate(0,0.10020202)" />
+      <path fill={"var(--icon-fg, currentColor)"} d="m 550.37526,61.007774 v 2.941184 h 0.50911 c 0.46723,0 0.51192,0.003 0.54303,0.0374 0.0187,0.0206 0.0339,0.0644 0.0339,0.0974 0,0.0517 -0.11828,0.17818 -0.8552,0.91493 -0.74422,0.74406 -0.86312,0.85502 -0.91628,0.85502 -0.0532,0 -0.17204,-0.11096 -0.91646,-0.85538 -0.75676,-0.75677 -0.85538,-0.86265 -0.85538,-0.91849 0,-0.12643 0.0199,-0.13091 0.57949,-0.13091 h 0.50459 l 0.006,-2.953361 z" />
+      <path fill={"var(--icon-fg, currentColor)"} d="m 546.99622,67.540786 c -0.12626,-0.03954 -0.22364,-0.128958 -0.27376,-0.251206 -0.0262,-0.06382 -0.0264,-0.07018 -0.0298,-1.023735 l -0.003,-0.959505 h 0.41811 0.41812 v 0.708278 0.708278 h 2.1672 2.16721 v -0.708437 -0.708437 l 0.41468,0.0032 0.41468,0.0032 v 0.956474 0.956484 l -0.0279,0.0689 c -0.037,0.09149 -0.12278,0.18121 -0.21432,0.224037 l -0.0726,0.03403 -2.66361,0.0021 c -2.17885,0.0021 -2.67288,-6.36e-4 -2.71461,-0.01378 z" />
+    </svg>
+  );
+}
+
+/** Undo one focal-set edit. Extracted from docs/02-project-creation.svg. */
+export function UndoIcon({ size = 24, className }: IconProps): JSX.Element {
+  return (
+    <svg
+      width={size * 1.36523}
+      height={size}
+      viewBox="771.5597 61.1757 8.1904 5.999"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden
+      focusable={false}
+      className={className}
+    >
+      <path fill={"currentColor"} d="m 775.69069,67.13936 c -0.0309,-0.0341 -0.0347,-0.10368 -0.0347,-0.64285 0,-0.5533 0.003,-0.60733 0.0364,-0.63749 0.0324,-0.0293 0.16623,-0.0336 1.21517,-0.039 l 1.17876,-0.006 0.0992,-0.0615 c 0.0651,-0.0403 0.11555,-0.0924 0.14686,-0.15171 0.0475,-0.0899 0.0477,-0.0931 0.0477,-0.87124 0,-0.76926 -6e-4,-0.78236 -0.0461,-0.87209 -0.0269,-0.0533 -0.083,-0.11676 -0.13488,-0.15284 l -0.0888,-0.0617 -2.3229,-0.005 -2.3229,-0.005 v 0.50911 c 0,0.46723 -0.003,0.51192 -0.0374,0.54303 -0.0206,0.0187 -0.0644,0.0339 -0.0974,0.0339 -0.0517,0 -0.17818,-0.11828 -0.91493,-0.8552 -0.74406,-0.74422 -0.85502,-0.86312 -0.85502,-0.91628 0,-0.0532 0.11096,-0.17204 0.85538,-0.91646 0.75677,-0.75676 0.86265,-0.85538 0.91849,-0.85538 0.12643,0 0.13091,0.0199 0.13091,0.57949 v 0.50459 l 2.39124,0.006 2.39122,0.006 0.16385,0.046 c 0.34195,0.0961 0.60904,0.25585 0.85066,0.50893 0.25011,0.26199 0.39434,0.54226 0.46,0.89386 0.0287,0.15389 0.0325,0.31002 0.0257,1.08553 -0.009,1.01882 -0.009,1.01819 -0.16805,1.35639 -0.20852,0.44254 -0.56865,0.7638 -1.04342,0.93082 l -0.20687,0.0728 -1.30175,0.006 c -1.24974,0.006 -1.30315,0.004 -1.33643,-0.0323 z" />
+    </svg>
+  );
+}
+
+/** Redo one focal-set edit. Extracted from docs/02-project-creation.svg. */
+export function RedoIcon({ size = 24, className }: IconProps): JSX.Element {
+  return (
+    <svg
+      width={size * 1.36523}
+      height={size}
+      viewBox="782.9591 61.1757 8.1904 5.999"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden
+      focusable={false}
+      className={className}
+    >
+      <path fill={"currentColor"} d="m 787.01857,67.13936 c 0.0309,-0.0341 0.0347,-0.10368 0.0347,-0.64285 0,-0.5533 -0.003,-0.60733 -0.0364,-0.63748 -0.0324,-0.0293 -0.16623,-0.0336 -1.21516,-0.039 l -1.17878,-0.006 -0.0992,-0.0615 c -0.0651,-0.0403 -0.11555,-0.0925 -0.14686,-0.15172 -0.0475,-0.0899 -0.0477,-0.0931 -0.0477,-0.87124 0,-0.76926 6e-4,-0.78236 0.0461,-0.87209 0.0269,-0.0533 0.083,-0.11676 0.13489,-0.15284 l 0.0888,-0.0617 2.3229,-0.005 2.32291,-0.005 v 0.50911 c 0,0.46723 0.003,0.51192 0.0374,0.54303 0.0206,0.0187 0.0644,0.0339 0.0974,0.0339 0.0517,0 0.17819,-0.11828 0.91494,-0.8552 0.74406,-0.74422 0.85501,-0.86312 0.85501,-0.91628 0,-0.0532 -0.11095,-0.17203 -0.85538,-0.91646 -0.75675,-0.75676 -0.86264,-0.85538 -0.91849,-0.85538 -0.12642,0 -0.13091,0.0199 -0.13091,0.57949 v 0.50459 l -2.39122,0.006 -2.39122,0.006 -0.16386,0.046 c -0.34195,0.0961 -0.60904,0.25585 -0.85066,0.50893 -0.25012,0.26199 -0.39435,0.54226 -0.46,0.89386 -0.0287,0.15389 -0.0325,0.31002 -0.0257,1.08553 0.009,1.01882 0.009,1.01819 0.16806,1.35639 0.20852,0.44254 0.56865,0.7638 1.04342,0.93082 l 0.20686,0.0728 1.30177,0.006 c 1.24972,0.006 1.30315,0.004 1.33642,-0.0323 z" />
+    </svg>
+  );
+}
+
+/** Number stepper: one up and one down triangle. Extracted from docs/02-project-creation.svg. */
 export function SpinnerArrowsIcon({ size = 24, className }: IconProps): JSX.Element {
   return (
-    <svg {...svgProps(size, className)}>
-      <path d="M12 3.6 17 9.6H7Z" fill="currentColor" />
-      <path d="M12 20.4 7 14.4h10Z" fill="currentColor" />
+    <svg
+      width={size * 0.84244}
+      height={size}
+      viewBox="761.8811 151.7016 5.6569 6.7152"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden
+      focusable={false}
+      className={className}
+    >
+      <path fill={"currentColor"} d="m 767.53799,154.53003 -2.82843,-2.82843 -2.82842,2.82844 z" />
+      <path fill={"currentColor"} d="m 767.53799,155.58838 -2.82843,2.82843 -2.82842,-2.82844 z" />
+    </svg>
+  );
+}
+
+/** Corner resize grip. Extracted from docs/02-project-creation.svg. */
+export function ResizeGripIcon({ size = 24, className }: IconProps): JSX.Element {
+  return (
+    <svg
+      width={size * 1.00000}
+      height={size}
+      viewBox="763.3964 92.5674 4 4"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden
+      focusable={false}
+      className={className}
+    >
+      <path fill={"currentColor"} d="m 763.39643,96.56741 h 4 l -10e-6,-4 z" />
     </svg>
   );
 }

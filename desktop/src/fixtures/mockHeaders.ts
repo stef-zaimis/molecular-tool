@@ -1,5 +1,11 @@
 /**
- * Mock FASTA headers for the UI-only phase.
+ * FASTA headers used as a TEST FIXTURE ONLY.
+ *
+ * The application no longer validates against this list: focal strings are
+ * checked against the headers of the FASTA the user actually selected, read by
+ * the main process (see `fasta:read-headers` in main.ts). This file exists so
+ * the matching unit tests have stable, realistic input.
+ *
  *
  * A small representative fixture — NOT a generated dataset. The real alignment
  * has 2354 headers (REPO_MAP.md §9); reproducing that volume here would prove

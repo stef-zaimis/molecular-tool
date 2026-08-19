@@ -2,51 +2,90 @@ import { useState } from 'react';
 import { AlignmentPlaceholder } from '../components/alignment/AlignmentPlaceholder';
 import { FocalStringEditor } from '../components/focal/FocalStringEditor';
 import { HelpButton } from '../components/controls/HelpButton';
-import { Checkbox, IconButton, NumberSpinner, TextField } from '../components/controls/Controls';
+import { Checkbox, NumberSpinner, TextField } from '../components/controls/Controls';
 import { MinusCircleIcon, PlusCircleIcon } from '../components/icons/Icons';
-import { useProject } from '../app/state/ProjectContext';
-import { MOCK_FASTA_HEADERS } from '../fixtures/mockHeaders';
 import { NoticeBar } from '../components/controls/NoticeBar';
+import { useProject } from '../app/state/ProjectContext';
+import { desktop } from '../app/desktopApi';
 import { HELP_TEXT, UNFINISHED_TEXT } from '../copy/helpText';
-import { serializeFocalTokens, tokenizeFocalInput } from '../components/focal/focalMatching';
+import {
+  describeFocalStringProblem,
+  validateFocalString,
+} from '../components/focal/focalMatching';
+import type { FocalEditMode } from '../app/state/projectState';
 import './MolecularDiagnosisScreen.css';
 
+/** Filename-safe stem for the exported focal set. */
+function exportFileName(title: string): string {
+  const stem = title.trim().replace(/[^\w.-]+/g, '_').replace(/^_+|_+$/g, '');
+  return `${stem || 'focal-set'}.txt`;
+}
+
 /**
- * Screen 3 — docs/03-molecular-diagnosis.png.
+ * Screen 3 — the Molecular Diagnosis workspace.
  *
- * Left: focal-set configuration and analysis parameters.
- * Right: the reserved alignment workspace.
- *
- * MOCK: focal strings are validated against MOCK_FASTA_HEADERS, not against
- * the file chosen on the previous screen. Nothing here parses FASTA.
+ * Focal-set editing is modal: `+` and `−` are mutually exclusive, and Enter
+ * applies the selected mode to whatever is in the STRING field. Every applied
+ * edit is one undo step.
  */
 export function MolecularDiagnosisScreen(): JSX.Element {
-  const { state, dispatch, activeFocalSet } = useProject();
+  const { state, dispatch, activeFocalSet, activeFocalHistory, fastaHeaders } = useProject();
   const config = state.draft.molecularDiagnosis;
+  const mode = state.focalMode;
 
-  // Draft text for the STRING field; committed into the focal set on Enter.
   const [pendingString, setPendingString] = useState('');
+  const [inlineError, setInlineError] = useState<string | null>(null);
 
-  const editorValue = serializeFocalTokens(activeFocalSet.strings);
-
-  const commitEditorValue = (raw: string) => {
-    dispatch({
-      type: 'setFocalStrings',
-      focalSetId: activeFocalSet.id,
-      strings: tokenizeFocalInput(raw),
-    });
+  const setMode = (next: FocalEditMode) => {
+    dispatch({ type: 'setFocalMode', mode: next });
+    setInlineError(null);
   };
 
-  const appendPendingString = () => {
-    const additions = tokenizeFocalInput(pendingString);
-    if (additions.length === 0) return;
+  /** Enter applies the current mode. */
+  const applyPendingString = () => {
+    const value = pendingString.trim();
 
-    // Preserve order, drop duplicates already present.
-    const existing = new Set(activeFocalSet.strings);
-    const merged = [...activeFocalSet.strings, ...additions.filter((t) => !existing.has(t))];
+    // ';' is rejected in both modes: it is the display separator, so allowing
+    // it inside an entry would make the rendered set ambiguous.
+    const problem = validateFocalString(
+      value,
+      mode === 'add' ? activeFocalSet.strings : [],
+    );
+    if (problem) {
+      setInlineError(describeFocalStringProblem(problem));
+      return;
+    }
 
-    dispatch({ type: 'setFocalStrings', focalSetId: activeFocalSet.id, strings: merged });
+    if (mode === 'add') {
+      dispatch({ type: 'addFocalString', focalSetId: activeFocalSet.id, value });
+      setPendingString('');
+      setInlineError(null);
+      return;
+    }
+
+    // Remove mode: only an exact entry is removed, and a miss is not destructive.
+    if (!activeFocalSet.strings.includes(value)) {
+      setInlineError('No focal string exactly matches that text.');
+      return;
+    }
+
+    dispatch({ type: 'removeFocalString', focalSetId: activeFocalSet.id, value });
     setPendingString('');
+    setInlineError(null);
+  };
+
+  const exportFocalSet = async () => {
+    const result = await desktop().dialog.exportFocalSet({
+      suggestedName: exportFileName(activeFocalSet.title),
+      lines: activeFocalSet.strings,
+    });
+
+    if (!result.ok && result.code !== 'CANCELLED') {
+      dispatch({
+        type: 'showNotice',
+        message: result.message ?? 'The focal set could not be exported.',
+      });
+    }
   };
 
   return (
@@ -66,8 +105,8 @@ export function MolecularDiagnosisScreen(): JSX.Element {
             width="var(--w-field)"
             action={{
               label: 'Save',
-              // TODO(backend): no persistence exists. The title already lives in
-              // session state, so this only explains itself. See UI_NOTES Q3.
+              // TODO(backend): no persistence exists; the title lives in session
+              // state only. See UI_NOTES.
               onClick: () =>
                 dispatch({ type: 'showNotice', message: UNFINISHED_TEXT.saveFocalSet }),
             }}
@@ -75,42 +114,74 @@ export function MolecularDiagnosisScreen(): JSX.Element {
         </div>
 
         <div className="diagnosis__row">
-          <div className="diagnosis__set-controls">
-            <IconButton label="Add focal set" onClick={() => dispatch({ type: 'addFocalSet' })}>
+          <div className="diagnosis__set-controls" role="radiogroup" aria-label="Focal string edit mode">
+            <button
+              type="button"
+              role="radio"
+              aria-checked={mode === 'add'}
+              className={`mode-button${mode === 'add' ? ' is-selected' : ''}`}
+              title="Add mode: Enter adds the string to the focal set"
+              onClick={() => setMode('add')}
+            >
               <PlusCircleIcon size={30} />
-            </IconButton>
-            <IconButton
-              label="Remove focal set"
-              onClick={() => dispatch({ type: 'removeActiveFocalSet' })}
-              disabled={state.focalSets.length <= 1}
+              <span className="sr-only">Add mode</span>
+            </button>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={mode === 'remove'}
+              className={`mode-button${mode === 'remove' ? ' is-selected' : ''}`}
+              title="Remove mode: Enter removes the matching string from the focal set"
+              onClick={() => setMode('remove')}
             >
               <MinusCircleIcon size={30} />
-            </IconButton>
+              <span className="sr-only">Remove mode</span>
+            </button>
           </div>
 
-          <label className="diagnosis__label diagnosis__label--inline" htmlFor="focal-string">
+          <label className="diagnosis__label" htmlFor="focal-string">
             STRING
           </label>
 
           <TextField
             id="focal-string"
-            ariaLabel="Add a focal search string"
+            ariaLabel={
+              mode === 'add'
+                ? 'Focal search string to add'
+                : 'Focal search string to remove'
+            }
             value={pendingString}
-            onChange={setPendingString}
-            onSubmit={appendPendingString}
+            onChange={(value) => {
+              setPendingString(value);
+              if (inlineError) setInlineError(null);
+            }}
+            onSubmit={applyPendingString}
             compact
             width="var(--w-field)"
-            action={{ label: 'Enter', onClick: appendPendingString }}
+            action={{ label: 'Enter', onClick: applyPendingString }}
           />
+
+          {inlineError && (
+            <p className="diagnosis__inline-error" role="alert">
+              {inlineError}
+            </p>
+          )}
         </div>
 
         <div className="diagnosis__editor">
           <FocalStringEditor
-            value={editorValue}
-            onChange={commitEditorValue}
-            headers={MOCK_FASTA_HEADERS}
-            onImport={() =>
-              dispatch({ type: 'showNotice', message: UNFINISHED_TEXT.loadFocalStrings })
+            strings={activeFocalSet.strings}
+            headers={fastaHeaders}
+            onUndo={() => dispatch({ type: 'undoFocalEdit', focalSetId: activeFocalSet.id })}
+            onRedo={() => dispatch({ type: 'redoFocalEdit', focalSetId: activeFocalSet.id })}
+            canUndo={activeFocalHistory.past.length > 0}
+            canRedo={activeFocalHistory.future.length > 0}
+            onExport={() => void exportFocalSet()}
+            canExport={activeFocalSet.strings.length > 0}
+            emptyHint={
+              mode === 'add'
+                ? 'No focal strings yet. Type one above and press Enter.'
+                : 'No focal strings to remove.'
             }
           />
         </div>

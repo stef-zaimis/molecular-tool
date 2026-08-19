@@ -79,16 +79,27 @@
   padding-right: 13px;
 }
 
+/*
+ * The design draws hovered controls as filled colour discs with the glyph
+ * knocked out, one hue per control.
+ */
 .titlebar__control:hover {
   color: var(--c-text);
-  background: var(--c-chrome-hover);
+  border-radius: var(--radius-round);
+}
+
+.titlebar__control--minimize:hover {
+  background: var(--c-minimize-hover);
+}
+
+.titlebar__control--maximize:hover {
+  background: var(--c-maximize-hover);
 }
 
 .titlebar__control--close:hover {
   background: var(--c-close-hover);
-  color: var(--c-text);
 }
 
 .titlebar__control:active {
-  background: var(--c-chrome-active);
+  filter: brightness(0.88);
 }

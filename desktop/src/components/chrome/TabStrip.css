@@ -70,12 +70,7 @@
   color: var(--c-text);
 }
 
-/*
- * Disabled tabs keep the reference's low-contrast treatment. The cursor and
- * aria state carry the "unavailable" meaning that colour alone would not.
- */
-.tabstrip__tab:disabled {
-  cursor: default;
-  color: var(--c-bg);
-  opacity: 0.75;
+/* Two-tone home glyph follows the tab's own state. */
+.tabstrip__home {
+  --icon-fg: currentColor;
 }

@@ -168,7 +168,13 @@ export interface FocalSet {
   readonly id: Id;
   /** The "FOCAL SET TITLE" field. Frontend-only today — Python has no equivalent. */
   title: string;
-  /** BACKEND GAP: multiple strings; Python consumes one. */
+  /**
+   * The focal set, as an ARRAY. This is the source of truth: the UI shows the
+   * entries separated by ';', but that separator is presentation only and is
+   * rejected inside an individual entry so the display stays unambiguous.
+   *
+   * BACKEND GAP: multiple strings; Python consumes exactly one `target_string`.
+   */
   strings: readonly string[];
 }
 
@@ -195,6 +201,33 @@ export interface FocalValidationRequest {
   readonly fastaPath: FilePath;
   readonly tokens: readonly string[];
   readonly mode: FocalMatchMode;
+}
+
+/**
+ * FASTA header extraction.
+ *
+ * IMPLEMENTED, and deliberately narrow: the Electron main process reads only
+ * lines beginning with '>' and returns them verbatim (trimmed), so focal
+ * strings can be validated against the file the user actually chose. It reads
+ * no residues, validates no alignment and computes nothing.
+ *
+ * Header semantics match `fasta_io.parse_fasta`: header = the rest of the line
+ * after '>', stripped; case preserved, because focal matching is case
+ * sensitive.
+ *
+ * BACKEND GAP: Python builds a dict, so duplicate headers collapse there and do
+ * not here. `duplicateCount` reports how many repeats were seen, since that
+ * silently changes the sequence count on the Python side (REPO_MAP §4.1).
+ */
+export interface FastaHeaderRequest {
+  readonly path: FilePath;
+}
+
+export interface FastaHeaderResponse {
+  readonly path: FilePath;
+  /** In file order, including any repeats. */
+  readonly headers: readonly string[];
+  readonly duplicateCount: number;
 }
 
 export interface FocalTokenValidation {

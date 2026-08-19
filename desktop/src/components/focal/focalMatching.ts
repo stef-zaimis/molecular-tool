@@ -23,8 +23,47 @@ export interface FocalToken {
   readonly matchCount: number;
 }
 
-/** Tokens are separated by ';' in the editor, mirroring the reference mockup. */
+/**
+ * Focal entries are DISPLAYED separated by ';', mirroring the design, but the
+ * separator is presentation only — the focal set is stored as an array of
+ * strings and never round-tripped through a delimited string. That is why a
+ * ';' inside a single entry is rejected outright rather than silently split.
+ */
 export const TOKEN_SEPARATOR = ';';
+
+/** Why a candidate focal string cannot be added, or null when it is fine. */
+export type FocalStringProblem =
+  | { readonly kind: 'empty' }
+  | { readonly kind: 'containsSeparator' }
+  | { readonly kind: 'duplicate' };
+
+export function describeFocalStringProblem(problem: FocalStringProblem): string {
+  switch (problem.kind) {
+    case 'empty':
+      return 'Enter a search string first.';
+    case 'containsSeparator':
+      return `A focal string cannot contain '${TOKEN_SEPARATOR}'.`;
+    case 'duplicate':
+      return 'That string is already in the focal set.';
+  }
+}
+
+/**
+ * Validates one candidate entry against the current set.
+ *
+ * `existing` is only consulted for the duplicate check, so this same function
+ * serves both the add and remove paths (remove passes an empty list).
+ */
+export function validateFocalString(
+  value: string,
+  existing: readonly string[] = [],
+): FocalStringProblem | null {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return { kind: 'empty' };
+  if (trimmed.includes(TOKEN_SEPARATOR)) return { kind: 'containsSeparator' };
+  if (existing.includes(trimmed)) return { kind: 'duplicate' };
+  return null;
+}
 
 /**
  * Split raw editor text into trimmed, non-empty tokens.

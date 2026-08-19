@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CloseIcon, MaximizeIcon, MenuIcon, MinimizeIcon, RestoreIcon } from '../icons/Icons';
+import { CloseIcon, MaximizeIcon, MenuIcon, MinimizeIcon } from '../icons/Icons';
 import { desktop } from '../../app/desktopApi';
 import './TitleBar.css';
 
@@ -62,21 +62,21 @@ export function TitleBar({
       <div className="titlebar__controls no-drag">
         <button
           type="button"
-          className="titlebar__control"
+          className="titlebar__control titlebar__control--minimize"
           onClick={() => desktop().window.minimize()}
           aria-label="Minimize"
         >
-          <MinimizeIcon size={35} />
+          <MinimizeIcon size={26} />
         </button>
 
         {canMaximize && (
           <button
             type="button"
-            className="titlebar__control"
+            className="titlebar__control titlebar__control--maximize"
             onClick={() => desktop().window.toggleMaximize()}
             aria-label={maximized ? 'Restore' : 'Maximize'}
           >
-            {maximized ? <RestoreIcon size={35} /> : <MaximizeIcon size={35} />}
+            <MaximizeIcon size={26} />
           </button>
         )}
 
@@ -86,7 +86,7 @@ export function TitleBar({
           onClick={() => desktop().window.close()}
           aria-label="Close"
         >
-          <CloseIcon size={35} />
+          <CloseIcon size={26} />
         </button>
       </div>
     </header>

@@ -33,7 +33,11 @@
   --c-chrome-hover: #39434f;
   --c-chrome-active: #262d37;
   --c-bg-hover: #5c6a7f;
-  --c-close-hover: #b4525f;
+  /* Window-control hover discs, taken from the "negative" variants drawn in
+     docs/02-project-creation.svg. */
+  --c-close-hover: #a35365;
+  --c-maximize-hover: #507454;
+  --c-minimize-hover: #886750;
   --c-focus-ring: #a8bcd8;
 
   /* Focal-string token states (measured from screen 3's STRING area). */

@@ -3,8 +3,7 @@ import { TabStrip } from '../components/chrome/TabStrip';
 import { Checkbox, FieldRow, TextField } from '../components/controls/Controls';
 import { HelpButton } from '../components/controls/HelpButton';
 import { useProject } from '../app/state/ProjectContext';
-import { desktop } from '../app/desktopApi';
-import { ANALYSIS_LABELS, ANALYSIS_ORDER } from '../app/state/projectState';
+import { ANALYSIS_LABELS, ANALYSIS_ORDER, canEnterWorkspace } from '../app/state/projectState';
 import { HELP_TEXT } from '../copy/helpText';
 import type { AnalysisKind } from '../contract';
 import './ProjectCreationScreen.css';
@@ -28,16 +27,19 @@ function baseName(path: string): string {
  * selection, on an otherwise empty canvas.
  */
 export function ProjectCreationScreen(): JSX.Element {
-  const { state, dispatch } = useProject();
-  const { draft } = state;
+  const { state, dispatch, chooseFastaFile } = useProject();
+  const { draft, alignment } = state;
 
-  const chooseFasta = async () => {
-    const path = await desktop().dialog.selectFastaFile();
-    // A cancelled dialog returns null; leave any previous choice intact.
-    if (path) dispatch({ type: 'setFastaPath', path });
-  };
+  // Two independent gates, reported separately so the reason is never a guess.
+  const hasFasta = draft.fastaPath !== null;
+  const hasAnalysis = draft.analyses.molecularDiagnosis;
+  const canContinue = canEnterWorkspace(state);
 
-  const canContinue = draft.analyses.molecularDiagnosis;
+  const continueBlockedReason = hasFasta
+    ? hasAnalysis
+      ? undefined
+      : 'Select Molecular Diagnosis to continue — it is the only analysis workspace in this build.'
+    : 'Select a FASTA file to continue.';
 
   const goToWorkspace = () => {
     if (!canContinue) return;
@@ -49,14 +51,8 @@ export function ProjectCreationScreen(): JSX.Element {
     <div className="app-shell creation">
       <TitleBar title="Molecular Diagnosis Tool" variant="workspace" />
 
-      <TabStrip
-        homeActive
-        onHome={() => {
-          desktop().shell.enterLauncherLayout();
-          dispatch({ type: 'navigate', screen: 'launcher' });
-        }}
-        homeLabel="Back to launcher"
-      />
+      {/* Home is the project page itself, so it is the current location here. */}
+      <TabStrip homeActive onHome={() => undefined} homeLabel="Project page" />
 
       <main className="app-body creation__body">
         <div className="creation__form">
@@ -80,9 +76,28 @@ export function ProjectCreationScreen(): JSX.Element {
               compact
               width="var(--w-field-wide)"
               title={draft.fastaPath ?? undefined}
-              action={{ label: 'Browse', onClick: () => void chooseFasta() }}
+              action={{ label: 'Browse', onClick: () => void chooseFastaFile() }}
             />
           </FieldRow>
+
+          {/* Header-read status: the only feedback that the chosen file is
+              actually readable before the user commits to an analysis. */}
+          {alignment.status !== 'idle' && (
+            <p
+              className={`creation__fasta-status${
+                alignment.status === 'failed' ? ' is-error' : ''
+              }`}
+              role="status"
+            >
+              {alignment.status === 'loading' && 'Reading FASTA headers...'}
+              {alignment.status === 'loaded' &&
+                `${alignment.data.headers.length} sequence headers read` +
+                  (alignment.data.duplicateCount > 0
+                    ? ` (${alignment.data.duplicateCount} duplicate headers)`
+                    : '')}
+              {alignment.status === 'failed' && `Could not read the file: ${alignment.message}`}
+            </p>
+          )}
 
           <div className="creation__analyses">
             <span className="creation__analyses-label">SELECT ANALYSES</span>
@@ -116,11 +131,7 @@ export function ProjectCreationScreen(): JSX.Element {
             className="creation__continue"
             onClick={goToWorkspace}
             disabled={!canContinue}
-            title={
-              canContinue
-                ? undefined
-                : 'Select Molecular Diagnosis to continue — it is the only analysis workspace in this build.'
-            }
+            title={continueBlockedReason}
           >
             Continue
           </button>

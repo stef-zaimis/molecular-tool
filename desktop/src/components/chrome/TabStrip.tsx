@@ -4,7 +4,6 @@ import './TabStrip.css';
 export interface TabDescriptor {
   readonly id: string;
   readonly label: string;
-  readonly enabled: boolean;
 }
 
 interface TabStripProps {
@@ -20,12 +19,13 @@ interface TabStripProps {
 /**
  * The strip below the title bar.
  *
- * In the mockups the home button and the analysis tabs share one visual
- * language: the current item takes the body colour and appears to merge into
- * the page beneath it, while the others sit dark and recede. Disabled tabs use
- * the same treatment as inactive ones — in the reference, unselected analyses
- * are rendered with body-coloured text on the dark fill, which is why they read
- * as unavailable rather than merely unselected.
+ * Home is the leftmost item and represents the project page itself, not a
+ * "back" action. The analysis tabs are whatever the caller passes in — the
+ * caller derives them from the analyses selected for the project, so an
+ * unselected analysis has no tab at all rather than a disabled one.
+ *
+ * Visual language: the current item takes the body colour and merges into the
+ * page beneath it; the others sit dark and recede.
  */
 export function TabStrip({
   tabs = [],
@@ -40,11 +40,14 @@ export function TabStrip({
       <button
         type="button"
         className={`tabstrip__home${homeActive ? ' is-active' : ''}`}
-        onClick={onHome}
+        // Already on the project page: activating Home would be a no-op, so it
+        // is inert rather than pretending to navigate.
+        onClick={homeActive ? undefined : onHome}
         aria-label={homeLabel}
         aria-current={homeActive ? 'page' : undefined}
+        aria-disabled={homeActive || undefined}
       >
-        <HomeIcon size={36} />
+        <HomeIcon size={34} />
       </button>
 
       {tabs.length > 0 && (
@@ -58,8 +61,6 @@ export function TabStrip({
                 role="tab"
                 className={`tabstrip__tab${active ? ' is-active' : ''}`}
                 aria-selected={active}
-                disabled={!tab.enabled}
-                title={tab.enabled ? undefined : `${tab.label} was not selected for this project`}
                 onClick={() => onSelect?.(tab.id)}
               >
                 {tab.label}

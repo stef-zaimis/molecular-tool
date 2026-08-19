@@ -69,6 +69,18 @@
 /* Continue                                                           */
 /* ---------------------------------------------------------------- */
 
+.creation__fasta-status {
+  margin: 6px 0 0;
+  padding-left: calc(var(--w-label-column) + var(--gap-label-field));
+  font-size: var(--fs-tooltip);
+  line-height: 1.3;
+  color: var(--c-muted);
+}
+
+.creation__fasta-status.is-error {
+  color: var(--c-token-nomatch);
+}
+
 .creation__footer {
   margin-top: auto;
   display: flex;

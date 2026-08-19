@@ -25,6 +25,10 @@ const noopApi: DesktopApi = {
   },
   dialog: {
     selectFastaFile: () => Promise.resolve(null),
+    exportFocalSet: () => Promise.resolve({ ok: false as const, code: 'NO_DESKTOP_RUNTIME' }),
+  },
+  fasta: {
+    readHeaders: () => Promise.resolve({ ok: false as const, code: 'NO_DESKTOP_RUNTIME' }),
   },
 };
 

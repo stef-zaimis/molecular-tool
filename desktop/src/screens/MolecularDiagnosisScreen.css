@@ -18,13 +18,18 @@
 }
 
 .diagnosis__left {
+  position: relative;
+  z-index: 1;
   flex: 0 0 var(--w-left-panel);
   width: var(--w-left-panel);
   min-width: 0;
   display: flex;
   flex-direction: column;
   padding-top: 24px;
-  overflow: hidden auto;
+  /* No overflow clipping here: it used to cut off anything that reached past
+     the panel edge. Tooltips are portalled, so nothing needs to escape a
+     scroll container any more. */
+  overflow: visible;
 }
 
 /* ---------------------------------------------------------------- */
@@ -61,19 +66,50 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  /* Enabled: dark disc, white glyph. Disabled: recessive disc, slate glyph. */
-  --icon-knockout: var(--c-text);
-  color: var(--c-chrome);
 }
 
-.diagnosis__set-controls .icon-button {
+/*
+ * Mutually exclusive add/remove modes. The design already distinguishes them
+ * by tone: the selected disc is chrome with a white symbol, the unselected one
+ * recedes into the surface colour.
+ */
+.mode-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 30px;
   height: 30px;
-  color: var(--c-chrome);
+  --icon-bg: var(--c-surface);
+  --icon-fg: var(--c-bg);
 }
 
-.diagnosis__set-controls .icon-button:hover:not(:disabled) {
-  color: var(--c-chrome-hover);
+.mode-button:hover:not(.is-selected) {
+  --icon-bg: var(--c-surface-hover);
+  --icon-fg: var(--c-muted);
+}
+
+.mode-button.is-selected {
+  --icon-bg: var(--c-chrome);
+  --icon-fg: var(--c-text);
+}
+
+/*
+ * Floated over the gap below the STRING row rather than inserted into the flow,
+ * so a transient validation message never shifts the focal-set box and the
+ * parameters underneath it.
+ */
+.diagnosis__inline-error {
+  position: absolute;
+  top: calc(100% + 3px);
+  left: calc(var(--w-label-column) + var(--gap-label-field));
+  z-index: 2;
+  margin: 0;
+  padding: 2px 8px;
+  background: var(--c-chrome);
+  color: var(--c-token-nomatch);
+  font-size: var(--fs-tooltip);
+  line-height: 1.35;
+  white-space: nowrap;
 }
 
 /* ---------------------------------------------------------------- */

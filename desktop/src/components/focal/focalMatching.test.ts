@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   countMatchingHeaders,
+  describeFocalStringProblem,
   evaluateFocalTokens,
   headerMatchesToken,
   matchingHeaders,
   serializeFocalTokens,
   tokenizeFocalInput,
   unionMatchCount,
+  validateFocalString,
 } from './focalMatching';
 import { MOCK_FASTA_HEADERS } from '../../fixtures/mockHeaders';
 
@@ -148,5 +150,35 @@ describe('unionMatchCount', () => {
 
   it('is zero when no tokens are supplied', () => {
     expect(unionMatchCount([], MOCK_FASTA_HEADERS)).toBe(0);
+  });
+});
+
+describe('validateFocalString', () => {
+  it('rejects an empty or whitespace-only string', () => {
+    expect(validateFocalString('')).toEqual({ kind: 'empty' });
+    expect(validateFocalString('   ')).toEqual({ kind: 'empty' });
+  });
+
+  it("rejects ';' inside a single entry, since it is the display separator", () => {
+    expect(validateFocalString('Leptacis;Synopeas')).toEqual({ kind: 'containsSeparator' });
+    expect(validateFocalString('Leptacis;')).toEqual({ kind: 'containsSeparator' });
+  });
+
+  it('rejects a duplicate of an existing entry', () => {
+    expect(validateFocalString('Leptacis', ['Leptacis'])).toEqual({ kind: 'duplicate' });
+    // Compared after trimming, so padded input is still a duplicate.
+    expect(validateFocalString('  Leptacis  ', ['Leptacis'])).toEqual({ kind: 'duplicate' });
+  });
+
+  it('accepts a normal entry, including one containing pipes and spaces', () => {
+    expect(validateFocalString('Leptacis_tipulae')).toBeNull();
+    expect(validateFocalString('AACTA5253-20|AU|Leptacis')).toBeNull();
+    expect(validateFocalString('Leptacis', ['Synopeas'])).toBeNull();
+  });
+
+  it('gives a readable message for every problem kind', () => {
+    for (const kind of ['empty', 'containsSeparator', 'duplicate'] as const) {
+      expect(describeFocalStringProblem({ kind })).toMatch(/\S/);
+    }
   });
 });

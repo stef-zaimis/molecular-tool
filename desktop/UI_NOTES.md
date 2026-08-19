@@ -10,9 +10,15 @@ Scope of this phase: **UI only**. No Python was modified, no backend transport
 exists, and no analysis can be executed. `python main.py` still launches the
 existing Tkinter application, unchanged.
 
-Reference material: `docs/01-launcher.png`, `docs/02-project-creation.png`,
-`docs/03-molecular-diagnosis.png`. Behavioural reference for the existing
-Python: `REPO_MAP.md` at the repo root.
+Reference material: `docs/02-project-creation.svg` (newest, authoritative for
+the project-creation screen), plus `docs/01-launcher.png`,
+`docs/02-project-creation.png`, `docs/03-molecular-diagnosis.png`. Behavioural
+reference for the existing Python: `REPO_MAP.md` at the repo root.
+
+> **Pass 2 (interaction semantics)** reworked navigation gating, focal-set
+> editing, the DNC steppers, tooltip stacking, and replaced every hand-drawn
+> icon with artwork extracted from the design SVG. Sections marked *(pass 2)*
+> describe current behaviour; anything contradicting them is stale.
 
 ---
 
@@ -53,13 +59,63 @@ repeatable, see §10 Q12.
 - **The project draft survives all navigation in a session.** Going back to the
   launcher and forward again keeps the name, FASTA path, analyses, parameters and
   focal strings. Nothing is persisted to disk.
-- The workspace "home" button returns to Project Creation, not to the launcher.
-  The launcher is reachable from Project Creation's home button. This is an
-  assumption — the mockups show a home icon on both screens but not where it goes.
-- `setActiveAnalysis` is guarded **in the reducer**, not just on the button, so a
-  disabled analysis cannot be activated by any code path.
+- Home is the Project page. From the workspace it navigates to Project Creation;
+  on Project Creation it is the current location and does nothing. **Superseded
+  pass 1 behaviour:** home used to fall back to the launcher from the project
+  page, which made it read as a Back button. The launcher is now unreachable
+  once a project exists — see §10 Q15.
+- `setActiveAnalysis` is guarded **in the reducer**, not just on the button, so an
+  unselected analysis cannot be activated by any code path.
 - If you untick the analysis you are currently viewing, the active tab falls back
   to the first still-enabled analysis rather than showing an empty workspace.
+
+---
+
+## 2b. Interaction semantics (pass 2)
+
+**Navigation**
+- The house icon is the **Project page**, not a Back button. On project
+  creation it is the current location and is inert (`aria-current="page"`, no
+  click handler). From an analysis page it navigates to project creation.
+- **Analysis tabs are generated from the project's analysis selection.** An
+  unselected analysis has no tab at all — the previous build rendered all three
+  and disabled two. `selectedAnalyses()` in `projectState.ts` is the single
+  source, consumed by the workspace shell.
+- **An analysis page cannot be entered without a FASTA.** `canEnterWorkspace()`
+  requires both a chosen file and Molecular Diagnosis selected; Continue is
+  disabled and its tooltip names whichever gate is unmet.
+
+**Focal set**
+- Stored as an **array of strings**. The `;` between entries is a rendered
+  separator, never the storage format, and is rejected inside an entry.
+- `+` and `-` are **mutually exclusive modes** (`role="radiogroup"`). The design
+  already distinguishes them by tone, so the selected disc is chrome with a
+  white symbol and the unselected one recedes into the surface colour.
+- **Enter applies the current mode**: add appends; remove deletes an exact
+  entry. A removal that matches nothing shows an inline message and changes
+  nothing.
+- **Undo/redo cover focal-set edits**, one add/remove per step, held in app
+  state rather than in the editor component, because the controls that mutate
+  the set live outside it. A new edit clears the redo branch. No-ops (empty add,
+  duplicate add, missed removal) record no history entry.
+- The **display is read-only**, which the brief explicitly permits. It was a
+  textarea whose text was re-tokenised on every keystroke, which made a joined
+  string the de-facto source of truth; entries now change only through `+`, `-`,
+  undo and redo. Text can still be selected and copied.
+- The **download icon exports** the set to a user-chosen `.txt`, one entry per
+  line, through a save dialog in the main process.
+
+**Focal validation against the real FASTA**
+- Colours no longer come from a fixture. On choosing a file, the main process
+  reads **only its header lines** (`fasta:read-headers`) and the renderer
+  validates each entry against them: green = the literal string occurs in at
+  least one header, red = it occurs in none, neutral = no file loaded yet.
+- Matching is unchanged: **case-sensitive literal substring**
+  (`header.includes(entry)`), matching Python's `target_string in header`. No
+  fuzzy matching was introduced.
+- This is a header read, not a FASTA parser: no residues are read, no alignment
+  is validated, nothing is computed, and no Python was touched. See
+  `FastaHeaderRequest` in `contract.ts`.
 
 ---
 
@@ -70,13 +126,16 @@ invent semantics.
 
 | Control | Where | What it does now |
 |---|---|---|
-| Hamburger (title bar) | Screens 2, 3 | Renders and has hover/focus states. **No menu** — there is no menu content in the mockups. See Q7. |
+| Hamburger (title bar) | Screens 2, 3 | Renders and has hover/focus states. **No menu** — there is no menu content in the design. See Q7. |
 | `Save` next to FOCAL SET TITLE | Screen 3 | Shows a "not available yet" notice. The title is already held in session state; there is nothing to save to. |
-| Import icon (left of the STRING box) | Screen 3 | Shows a "not available yet" notice. Assumed to mean "load focal strings from a file"; no such format exists. See Q3. |
-| `+` / `−` (STRING row) | Screen 3 | Assumed to add/remove **focal sets**. `+` adds an empty set and makes it active; `−` removes the active one and is disabled when only one remains. There is no visible focal-set switcher in the mockup, so added sets are currently reachable only via these buttons. See Q5. |
-| Undo / redo arrows | Screen 3 | Fully wired to the editor's own history stack, shared with Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y. Redo is disabled until something is undone — matching the mockup, where redo is drawn dimmed. |
-| Resize grip (STRING box) | Screen 3 | Real: the box is vertically resizable. |
+| Download icon (left of the focal box) | Screen 3 | **Resolved in pass 2**: exports the focal set as a plain `.txt`, one entry per line. |
+| `+` / `-` (STRING row) | Screen 3 | **Resolved in pass 2**: mutually exclusive add/remove *modes* for focal strings, not focal-set management. Adding or removing a whole focal set now has no UI — see Q16. |
+| Undo / redo arrows | Screen 3 | **Resolved in pass 2**: undo/redo for focal-set edits, one add/remove at a time. Redo is dimmed until something has been undone, matching the design. |
+| Resize grip (focal box) | Screen 3 | Real: the box is vertically resizable. |
 | Scrollbar rail left of the alignment panel | Screen 3 | **Presentational only.** The real scrollbar belongs to the future viewer. |
+| Multiple FASTA files (new SVG) | Screen 2 | **Not implemented, deliberately.** The design shows a list of FASTA files with its own undo/redo; the app stays single-FASTA because the scientific meaning of several files is undefined. See Q13. |
+| Saved-title state with CREATE / RENAME (new SVG) | Screen 2 | Not implemented — it implies project persistence. See Q14. |
+| RECENTS / BROWSE under Open Existing (new SVG) | Screen 1 | Not implemented; still blocked on there being no project format. |
 
 ---
 
@@ -100,14 +159,20 @@ invent semantics.
    keyboard focus ring (`--c-focus-ring`) has no counterpart in the design at all
    — it is required for a usable desktop app.
 
-4. **Icons are hand-drawn, not exported assets.** `docs/` had no SVGs. Each glyph
-   in `src/components/icons/Icons.tsx` was traced from the reference: the
-   hamburger (35×26, three 6px bars), window controls (26px ink), and the home
-   glyph (40×36, overhanging roof with a door notch) match measured geometry.
-   Known differences: the reference roof appears to be drawn as an outlined
-   triangle with an inner filled triangle and small 2px gaps near the eaves; ours
-   is a single filled triangle. At 100% this is not visible. The import, undo,
-   redo and plus/minus glyphs are close but not pixel-traced.
+4. **Icons are the design's own artwork (pass 2).** `src/components/icons/Icons.tsx`
+   is generated from `docs/02-project-creation.svg`: each glyph is pulled out by
+   element id, its inherited group transforms are composed onto the shapes, and
+   its viewBox is set to the artwork's own bounding box. Nothing is redrawn, and
+   the file says not to hand-edit the path data. Covered: home, menu, tick,
+   question mark, undo, redo, plus, minus, DNC stepper, download, minimise,
+   maximise, close, resize grip.
+   Two-tone glyphs (help, plus, minus, download) paint their disc with
+   `--icon-bg` and their symbol with `--icon-fg`, which is how selected vs
+   unselected mode is expressed without swapping artwork.
+   The design has **no separate restore glyph**, so a maximised window shows the
+   same maximise artwork. Window-control hover colours are taken from the
+   design's own "negative" variants (close `#A35365`, maximise `#507454`,
+   minimise `#886750`).
 
 5. **The tooltip is 317px wide with a left-pointing notch**, matching the one
    open tooltip in screen 2. Only one tooltip style exists, so this is applied to
@@ -118,12 +183,27 @@ invent semantics.
    should "look intentional, not like unfinished white space", so it carries a
    recessive (42% opacity) label. Remove it when the viewer lands.
 
-7. **Numbers in the spinners are visible in our build.** The mockup's spinners
+7. **Numbers in the spinners are visible in our build.** The design's spinners
    appear empty. Ours show the actual values (1 and 2, the Python defaults),
    because an empty numeric control with no value would be misleading.
+   Each field has exactly one stepper: the design's up/down pair is a single
+   piece of artwork with two transparent hit areas over its halves. The previous
+   build rendered that glyph twice and cropped each copy, which read as a
+   duplicated control.
 
 8. **A notice bar appears for unfinished actions.** Not in the design. It only
    renders after the user activates such a control, so the resting UI stays clean.
+
+9. **Additions with no counterpart in the design (pass 2):** a one-line FASTA
+   header-read status under the file field ("14 sequence headers read", or the
+   read error); a floating inline validation message under the STRING field; and
+   a centred "not built yet" panel for a selected analysis that has no
+   workspace. All three exist because the new gating would otherwise fail
+   silently.
+
+10. **Tooltips are portalled into `<body>`** with fixed positioning, so no
+    ancestor `overflow` can clip them and the alignment pane cannot paint over
+    them. They flip to the left of the dot when they would run off the window.
 
 **Measured fidelity after iteration** (reference vs. build, same measurement
 method): title-bar and tab-strip bands exact; input positions and heights within
@@ -298,7 +378,31 @@ FASTA anywhere in this app.
 12. **Do you want the screenshot harness committed?** It currently lives in a
     scratch directory. Committing it under `desktop/tools/` would make the
     visual-diff loop repeatable in CI, at the cost of a dev dependency on
-    offscreen Electron.
+    offscreen Electron. The same directory holds the icon-extraction script that
+    generates `Icons.tsx` from the design SVG — that one is arguably more
+    valuable to keep, so the icons can be regenerated when the design changes.
+
+13. **What do multiple FASTA files mean?** The new SVG shows a list of them with
+    its own undo/redo. Left unimplemented on purpose, per the brief. Are they
+    merged into one alignment, analysed independently, or is one of them
+    "active"? This is a scientific question, not a UI one.
+
+14. **What does the project-title `Save` / CREATE / RENAME state do?** The new
+    SVG's second project-creation frame shows a saved title with CREATE and
+    RENAME buttons, which implies project persistence. Not implemented, since
+    there is still no project format.
+
+15. **Is there meant to be any route back to the launcher?** Home is now the
+    project page, as instructed, so the launcher becomes unreachable once a
+    project is created. No affordance for it exists in the design either.
+
+16. **Should adding/removing whole focal sets still be possible?** `+`/`-` are
+    now string modes, so the multi-focal-set actions they previously performed
+    have no UI. The state model still supports several sets.
+
+17. **Should a duplicate add be treated as a no-op?** It currently is, by
+    symmetry with a missed removal: nothing changes, so no history entry is
+    recorded and an inline message explains why.
 
 ---
 
