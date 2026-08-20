@@ -7,6 +7,7 @@ import { ANALYSIS_LABELS, ANALYSIS_ORDER, canEnterWorkspace } from '../app/state
 import { HELP_TEXT } from '../copy/helpText';
 import type { AnalysisKind } from '../contract';
 import './ProjectCreationScreen.css';
+import { SourceStatusPanel } from '../components/sources/SourceStatusPanel';
 
 const HELP_BY_ANALYSIS: Record<AnalysisKind, string> = {
   molecularDiagnosis: HELP_TEXT.molecularDiagnosis,
@@ -104,6 +105,13 @@ export function ProjectCreationScreen(): JSX.Element {
               {alignment.status === 'failed' && alignment.error.message}
             </p>
           )}
+
+          {/*
+            Only rendered when a persistent project is open. It is the first
+            thing shown after opening one, because a linked file that has moved
+            or changed has to be dealt with before anything else is worth doing.
+          */}
+          <SourceStatusPanel />
 
           <div className="creation__analyses">
             <span className="creation__analyses-label">SELECT ANALYSES</span>

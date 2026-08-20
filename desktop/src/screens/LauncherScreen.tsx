@@ -2,7 +2,6 @@ import { TitleBar } from '../components/chrome/TitleBar';
 import { useProject } from '../app/state/ProjectContext';
 import { desktop } from '../app/desktopApi';
 import { NoticeBar } from '../components/controls/NoticeBar';
-import { UNFINISHED_TEXT } from '../copy/helpText';
 import './LauncherScreen.css';
 
 /**
@@ -12,7 +11,7 @@ import './LauncherScreen.css';
  * buttons, each a bold uppercase action over a lighter noun.
  */
 export function LauncherScreen(): JSX.Element {
-  const { state, dispatch } = useProject();
+  const { state, dispatch, chooseProjectDirectory } = useProject();
 
   const createNewProject = () => {
     // Grow the OS window first so the larger screen does not paint into the
@@ -21,11 +20,17 @@ export function LauncherScreen(): JSX.Element {
     dispatch({ type: 'navigate', screen: 'projectCreation' });
   };
 
-  const openExistingProject = () => {
-    // TODO(backend): there is no project file format in the repository yet, so
-    // there is nothing to open. The control is reproduced from the design and
-    // explains itself only when actually activated — see UI_NOTES Q2.
-    dispatch({ type: 'showNotice', message: UNFINISHED_TEXT.openExistingProject });
+  /*
+   * A project is a directory holding `project.sqlite`. Opening one restores
+   * its linked FASTA files and focal sets, and immediately reports the current
+   * state of those files on disk — including any that have gone missing since
+   * the project was last used.
+   */
+  const openExistingProject = async () => {
+    const opened = await chooseProjectDirectory();
+    if (!opened) return;
+    desktop().shell.enterWorkspaceLayout();
+    dispatch({ type: 'navigate', screen: 'projectCreation' });
   };
 
   return (
@@ -41,7 +46,7 @@ export function LauncherScreen(): JSX.Element {
         <button
           type="button"
           className="launcher__button"
-          onClick={openExistingProject}
+          onClick={() => void openExistingProject()}
           aria-describedby={state.notice ? 'launcher-notice' : undefined}
         >
           <span className="launcher__action">Open Existing</span>

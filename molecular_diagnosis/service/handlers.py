@@ -398,7 +398,12 @@ def ping(_params: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# Project persistence methods live in their own module; they share this
+# dispatcher so the frontend has a single request channel.
+from molecular_diagnosis.service.projects import PROJECT_METHODS  # noqa: E402
+
 METHODS = {
+    **PROJECT_METHODS,
     "ping": ping,
     "loadFasta": load_fasta,
     "validateFocalStrings": validate_focal_strings,

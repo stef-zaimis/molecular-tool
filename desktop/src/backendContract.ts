@@ -27,7 +27,28 @@ export type BackendErrorCode =
   | 'OUTPUT_WRITE_FAILED'
   | 'INVALID_PARAMETER'
   | 'BACKEND_UNAVAILABLE'
-  | 'UNKNOWN';
+  | 'UNKNOWN'
+  /* Project-level codes. Raised by `project/service.py` and passed through the
+     boundary with their own code, so the renderer can branch on them. */
+  | 'NO_PROJECT_OPEN'
+  | 'PROJECT_NOT_FOUND'
+  | 'PROJECT_ALREADY_EXISTS'
+  | 'UNKNOWN_FILE'
+  | 'PATH_ALREADY_LINKED'
+  | 'SOURCE_UNAVAILABLE'
+  | 'SOURCE_CHANGED_DURING_READ'
+  | 'SEARCH_SCOPE_UNAVAILABLE'
+  | 'UNKNOWN_FOCAL_SET'
+  | 'FOCAL_SET_LOCKED'
+  | 'FOCAL_QUERY_EMPTY'
+  | 'FOCAL_ENTRIES_NOT_IN_FILE'
+  | 'FOCAL_ENTRIES_NOT_IN_SCOPE'
+  | 'FOCAL_PRESENCE_UNKNOWN'
+  | 'NO_FILES_SELECTED'
+  | 'SCOPE_MISMATCH'
+  | 'DUPLICATE_HEADER_IN_FILE'
+  | 'DUPLICATE_HEADER_ACROSS_FILES'
+  | 'INCOMPATIBLE_ALIGNMENT_LENGTHS';
 
 export interface BackendError {
   readonly code: BackendErrorCode | string;
@@ -166,6 +187,192 @@ export interface MolecularDiagnosisResult {
   };
   readonly dmc: DiagnosisDmcResult;
   /** True when the search stopped only because it hit the configured maximum. */
+  readonly canContinue: boolean;
+  readonly resume: DiagnosisResumeState | null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Projects: persistent, SQLite-backed                                */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Runtime state of a linked FASTA. Mirrors `project/sources.py::SourceState`.
+ *
+ * None of this is persisted: it is recomputed from the filesystem every time.
+ * The renderer must treat it as a live reading, not as a stored property of
+ * the project.
+ */
+export type SourceState =
+  | 'missing'
+  | 'unreadable'
+  | 'never_indexed'
+  | 'unverified'
+  | 'current'
+  | 'stale';
+
+/** Mirrors `SourceStatus.to_payload()`. */
+export interface SourceStatusPayload {
+  readonly fastaFileId: string;
+  readonly sourcePath: string;
+  readonly displayName: string;
+  readonly state: SourceState;
+  /** Readable right now. Says nothing about whether the index still matches. */
+  readonly available: boolean;
+  /** May the stored header index be trusted for arbitrary searching? */
+  readonly indexUsable: boolean;
+  readonly exists: boolean;
+  readonly currentSizeBytes: number | null;
+  readonly currentMtimeNs: number | null;
+  readonly indexedSizeBytes: number | null;
+  readonly indexedMtimeNs: number | null;
+  readonly indexRevision: number;
+  readonly sequenceCount: number | null;
+  readonly alignmentLength: number | null;
+  readonly duplicateHeaderCount: number;
+  readonly message: string | null;
+}
+
+export interface ProjectCapabilities {
+  readonly sqliteVersion: string;
+  readonly fts5: boolean;
+  readonly trigram: boolean;
+  /** True only when the FTS accelerator is actually installed and usable. */
+  readonly acceleratedSearch: boolean;
+}
+
+export interface ProjectMetadata {
+  readonly projectUuid: string;
+  readonly title: string;
+}
+
+export interface OpenProjectResult {
+  readonly projectDir: string;
+  readonly outputsDir: string;
+  readonly metadata: ProjectMetadata;
+  readonly capabilities: ProjectCapabilities;
+  /** Every linked file, already status-checked. Missing files appear here. */
+  readonly sources: readonly SourceStatusPayload[];
+}
+
+export interface HeaderHitPayload {
+  readonly fastaFileId: string;
+  readonly ordinal: number;
+  readonly header: string;
+  readonly recordStartByte: number | null;
+}
+
+/**
+ * Search is non-mutating, so a file it could not read is reported rather than
+ * fatal. `unavailable` is what the UI must show before the user trusts the
+ * hit list as complete.
+ *
+ * `+` does NOT behave this way: it refuses instead of persisting a partial
+ * expansion. See `addFocalEntries`.
+ */
+export interface SearchHeadersResult {
+  readonly query: string;
+  readonly hits: readonly HeaderHitPayload[];
+  readonly unavailable: readonly SourceStatusPayload[];
+}
+
+/**
+ * Where a focal entry currently is. Mirrors `locations.py::PresenceState`.
+ *
+ * `present_other` only ever appears when a specific file is selected: it means
+ * "not in the selected file, but present elsewhere in the project".
+ */
+export type FocalPresenceState = 'present_current' | 'present_other' | 'missing' | 'unknown';
+
+export interface FocalPresencePayload {
+  readonly entryId: string;
+  readonly header: string;
+  readonly state: FocalPresenceState;
+  /** fastaFileId -> how many records in that file carry this exact header. */
+  readonly occurrences: Readonly<Record<string, number>>;
+}
+
+export interface FocalEntryPayload {
+  readonly id: string;
+  readonly header: string;
+}
+
+/**
+ * A focal set and its complete explicit membership.
+ *
+ * `locked` is enforced in Python, not by disabling controls: a locked set may
+ * be selected, presence-checked and analysed, but every mutation is refused
+ * with `FOCAL_SET_LOCKED`. Grey the buttons out for clarity, never for safety.
+ */
+export interface FocalSetPayload {
+  readonly id: string;
+  readonly title: string;
+  readonly locked: boolean;
+  readonly entries: readonly FocalEntryPayload[];
+}
+
+/**
+ * The result of replacing the large textbox's contents.
+ *
+ * Applied as a diff: `kept` headers keep their entry ids and their cached
+ * locations, so a debounced editor may resend freely.
+ */
+export interface FocalReplacementResult {
+  readonly focalSetId: string;
+  /** Exactly what is now stored, in textbox order, trimmed and deduplicated. */
+  readonly headers: readonly string[];
+  readonly added: readonly string[];
+  readonly removed: readonly string[];
+  readonly kept: readonly string[];
+}
+
+export interface FocalQueryResult {
+  readonly query: string;
+  /** Every exact header the query resolved to. Never the query itself. */
+  readonly matched: readonly string[];
+  readonly added: readonly string[];
+}
+
+export interface RelinkResult {
+  /** True when the new path holds byte-identical content, so nothing was rebuilt. */
+  readonly identical: boolean;
+  readonly reindexed: boolean;
+  readonly indexRevision: number;
+  readonly source: SourceStatusPayload;
+}
+
+export interface ProjectDiagnosisRequest {
+  readonly focalSetId: string;
+  readonly fastaFileIds: readonly string[];
+  /**
+   * Any run is refused unless every focal entry is present somewhere in the
+   * files being analysed, because an absent entry would silently shrink the
+   * focal group. `singleFile` only changes which refusal code comes back
+   * (`FOCAL_ENTRIES_NOT_IN_FILE` vs `FOCAL_ENTRIES_NOT_IN_SCOPE`), and asserts
+   * that exactly one file was selected.
+   */
+  readonly singleFile: boolean;
+  readonly options: {
+    readonly ignoreGaps: boolean;
+    readonly giveBenefitOfDoubtToAmbiguousBases: boolean;
+    readonly minCandidateSize: number;
+    readonly maxCandidateSize: number;
+  };
+  readonly resume?: DiagnosisResumeState | null;
+}
+
+export interface ProjectDiagnosisResult {
+  readonly focalSetId: string;
+  /** The exact headers used as the focal group. Not substrings. */
+  readonly focalHeaders: readonly string[];
+  readonly fastaFileIds: readonly string[];
+  readonly sequenceCount: number;
+  readonly alignmentLength: number | null;
+  readonly outputs: {
+    readonly reportTxt: string;
+    readonly workbookXlsx: string;
+    readonly consensusTxt: string | null;
+  };
+  readonly dmc: DiagnosisDmcResult;
   readonly canContinue: boolean;
   readonly resume: DiagnosisResumeState | null;
 }

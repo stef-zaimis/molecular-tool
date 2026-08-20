@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { defaultOutputDirectory } from '../app/state/ProjectContext';
 import type {
+  FocalReplacementResult,
+  FocalSetPayload,
   MolecularDiagnosisRequest,
   MolecularDiagnosisResult,
 } from '../backendContract';
@@ -147,5 +149,47 @@ describe('defaultOutputDirectory', () => {
 
   it('falls back to the input when there is no directory part', () => {
     expect(defaultOutputDirectory('aligned.fasta')).toBe('aligned.fasta');
+  });
+});
+
+describe('project scope serialization', () => {
+  /*
+   * `undefined` and `[]` mean different things to the backend: absent is "the
+   * whole project", empty is "an empty scope". JSON.stringify drops an
+   * undefined value, which is exactly how the absent case is expressed on the
+   * wire — so this is the behaviour the contract depends on, not an accident.
+   */
+  it('drops an omitted scope so the backend reads it as the whole project', () => {
+    const wire = JSON.parse(JSON.stringify({ query: 'Target', fastaFileIds: undefined }));
+    expect('fastaFileIds' in wire).toBe(false);
+  });
+
+  it('preserves an empty scope as an empty array', () => {
+    const wire = roundTrip({ query: 'Target', fastaFileIds: [] as readonly string[] });
+    expect(wire.fastaFileIds).toEqual([]);
+  });
+
+  it('round-trips a focal set with its lock state and entries', () => {
+    const focalSet: FocalSetPayload = {
+      id: 'set-1',
+      title: 'Targets',
+      locked: true,
+      entries: [
+        { id: 'e1', header: 'focal_1|AU|Target' },
+        { id: 'e2', header: 'gi|123 Homo sapiens' },
+      ],
+    };
+    expect(roundTrip(focalSet)).toEqual(focalSet);
+  });
+
+  it('round-trips a focal replacement result', () => {
+    const replacement: FocalReplacementResult = {
+      focalSetId: 'set-1',
+      headers: ['a', 'b'],
+      added: ['b'],
+      removed: ['c'],
+      kept: ['a'],
+    };
+    expect(roundTrip(replacement)).toEqual(replacement);
   });
 });

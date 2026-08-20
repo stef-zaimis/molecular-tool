@@ -101,9 +101,6 @@ export type HelpTextKey = keyof typeof HELP_TEXT;
  * developer placeholders into the UI.
  */
 export const UNFINISHED_TEXT = {
-  openExistingProject:
-    'Opening a saved project is not available yet. This build has no project file ' +
-    'format, so there is nothing to open. Create a new project to continue.',
   loadFocalStrings:
     'Loading focal strings from a file is not available yet. There is no focal-set ' +
     'file format in this build.',

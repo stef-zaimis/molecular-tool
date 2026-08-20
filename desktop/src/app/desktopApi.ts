@@ -43,6 +43,33 @@ const noopApi: DesktopApi = {
     validateFocalStrings: () => Promise.resolve(unavailable),
     runMolecularDiagnosis: () => Promise.resolve(unavailable),
   },
+  project: {
+    create: () => Promise.resolve(unavailable),
+    open: () => Promise.resolve(unavailable),
+    close: () => Promise.resolve(unavailable),
+    setTitle: () => Promise.resolve(unavailable),
+    refreshSources: () => Promise.resolve(unavailable),
+    linkFasta: () => Promise.resolve(unavailable),
+    unlinkFasta: () => Promise.resolve(unavailable),
+    relinkFasta: () => Promise.resolve(unavailable),
+    reindexFasta: () => Promise.resolve(unavailable),
+    searchHeaders: () => Promise.resolve(unavailable),
+    listFocalSets: () => Promise.resolve(unavailable),
+    getFocalSet: () => Promise.resolve(unavailable),
+    createFocalSet: () => Promise.resolve(unavailable),
+    renameFocalSet: () => Promise.resolve(unavailable),
+    setFocalSetLocked: () => Promise.resolve(unavailable),
+    deleteFocalSet: () => Promise.resolve(unavailable),
+    replaceFocalEntries: () => Promise.resolve(unavailable),
+    replaceFocalEntryHeaders: () => Promise.resolve(unavailable),
+    addFocalEntries: () => Promise.resolve(unavailable),
+    removeFocalEntries: () => Promise.resolve(unavailable),
+    focalPresence: () => Promise.resolve(unavailable),
+    runMolecularDiagnosis: () => Promise.resolve(unavailable),
+  },
+  projectDialog: {
+    selectDirectory: () => Promise.resolve(null),
+  },
 };
 
 export function desktop(): DesktopApi {

@@ -292,15 +292,20 @@ Consequences and open edges:
 
 ## 8. Open Existing Project
 
-Reproduced visually. Activating it shows a notice explaining that this build has
-no project file format and offering "create a new project" instead. It does not
-open a file picker, because there is no file type to pick and offering one would
-imply a format that does not exist.
+**Implemented (pass 5).** A project is a directory holding `project.sqlite`
+plus an `outputs/` folder, so the control opens a *directory* picker rather
+than a file picker. Opening restores the project's linked FASTA files and
+focal sets and immediately reports the live state of every linked file.
 
-`OpenProjectRequest` / `OpenProjectResponse` / `PersistedProject` in
-`contract.ts` describe what a real implementation needs, including two
-unresolved questions: whether the FASTA is referenced or copied, and whether a
-checksum is stored to detect the alignment changing under a saved project.
+Both questions this section previously left open are now answered, by the
+schema rather than by the UI:
+
+* **Referenced, never copied.** `fasta_file` stores an absolute path. No FASTA
+  content is ever written into SQLite, so a project stays small and the user's
+  file remains the single source of truth.
+* **Yes, a checksum is stored** — `indexed_sha256`, alongside
+  `indexed_size_bytes` and `indexed_mtime_ns`. Size and mtime are the cheap
+  detector; the hash is the proof. See §15.
 
 ---
 
@@ -560,3 +565,144 @@ directory (Browse, or "Use FASTA Location"); the new UI always uses the folder
 containing the FASTA, because the current design has no output-directory
 control. This is a deliberate deviation, not a parity failure, and was not
 redesigned in this pass.
+
+---
+
+## 15. Persistent projects and source status (pass 6)
+
+### The renderer holds no database
+
+There is no SQL anywhere in `desktop/`. The renderer cannot open, query or
+migrate the project database; it calls named operations
+(`window.desktop.project.*`) that the Python service performs against the
+database it exclusively owns. The main process is equally ignorant — it
+forwards, and holds no project state of its own.
+
+### Source state is a live reading, not a stored property
+
+A project stores a path. Between sessions the file behind that path can be
+moved, edited or deleted, so every status the UI shows is recomputed from the
+filesystem and nothing about availability is ever persisted. `sourceStatus.ts`
+keeps three ideas apart, because conflating them is what produces a UI that
+lies:
+
+| Idea | Question it answers |
+| --- | --- |
+| `available` | Can this file be read right now? |
+| `indexUsable` | Does the stored header index provably describe those bytes? |
+| `activity` | What is the app doing about it at this instant? |
+
+A file can be available with an unusable index (it was edited), and it can have
+a usable index while a check is in flight. Neither implies the other.
+
+### The six states, and how each is phrased
+
+| Backend state | Shown as | Tone | Analysable | Offered action |
+| --- | --- | --- | --- | --- |
+| `current` | Current | ok | yes | — |
+| `unverified` | Unverified | pending | yes | — |
+| `stale` | Changed on disk | warning | no | Re-index |
+| `never_indexed` | Not indexed | warning | no | Re-index |
+| `missing` | Missing | error | no | Relink |
+| `unreadable` | Unreadable | error | no | Relink |
+
+Two of these deserve their reasoning written down:
+
+* **`unverified` is not a warning.** Size and mtime still match; the file
+  simply has not been hashed during this session. Opening a project is
+  deliberately stat-only so that a project linking a multi-gigabyte alignment
+  opens instantly. Painting that as a problem would train users to ignore the
+  colour that means something.
+* **`unverified` is still analysable.** A run reads and verifies the file
+  anyway, so refusing to start would only mean hashing it twice.
+
+While a file is being checked, re-indexed or relinked, the row reports the
+*activity* ("Re-indexing") rather than the underlying state, so a large file
+does not sit there labelled "Changed on disk" with nothing apparently
+happening. Activity never makes a file analysable: work in progress is not a
+reason to let a run start.
+
+### When status is refreshed, and when it is not
+
+Refreshes take the cheap path — one `stat` per linked file — at:
+
+* project open (the response carries a full sweep, so a file that vanished
+  while the app was closed is visible on first paint);
+* regaining window focus;
+* entering a screen or analysis tab.
+
+The strong path, which hashes anything not yet proven this session, runs only
+for a deliberate user action ("Verify now") and on the run path.
+
+**Nothing in the focal editor triggers either.** Focal text is matched against
+data already in memory, so typing never causes a stat sweep, let alone a
+rehash of the alignment.
+
+### Errors
+
+An expected refusal — "this file is missing", "that focal entry is not in this
+file" — travels as a code plus a sentence written for the user, and carries no
+traceback. A traceback would describe where the service chose to refuse, which
+tells nobody anything. Unexpected exceptions still travel with theirs.
+
+
+## 16. Backend hardening before the project-backed UI (pass 7)
+
+This pass changed no visual design. It closed correctness holes and completed
+the service contract the Molecular Diagnosis UI is about to be built against,
+so the renderer has something stable and honest to compile and reason against.
+
+### Create and Open are now two different operations
+
+`project.open` used to create a `project.sqlite` in whatever folder it was
+given. That made the launcher's two buttons the same button: "Open Existing
+Project" on the wrong folder produced an empty project that looked exactly
+like lost work.
+
+* `project.create` initialises one, and refuses a folder that already holds a
+  project (`PROJECT_ALREADY_EXISTS`).
+* `project.open` opens an existing one and never creates (`PROJECT_NOT_FOUND`),
+  and never renames it.
+* `project.setTitle` is the one way the title changes.
+
+A failed open leaves the currently open project open. The context exposes
+`createProject` / `chooseNewProjectDirectory` alongside `openProject` /
+`chooseProjectDirectory`; wiring the creation screen to them is the next pass.
+
+### The rules live in Python, not in disabled buttons
+
+A locked focal set may be selected, presence-checked and analysed, but every
+mutation — rename, delete, `+`, `-`, textbox replace — is refused with
+`FOCAL_SET_LOCKED` no matter who calls it. Grey the controls out for clarity;
+do not rely on that greying for correctness. The same applies to the empty
+`+`/`-` query (`FOCAL_QUERY_EMPTY`) and to run gating.
+
+### The big textbox is membership, not a query
+
+`project.replaceFocalEntries` takes the raw `a ; b;c` box and makes the set
+exactly that: trimmed around the separators, empties ignored, duplicates
+collapsed onto their first occurrence, order preserved. A header that matches
+no FASTA is KEPT so it can show red — it is not silently dropped.
+
+It is applied as a diff, so surviving entries keep their ids and their cached
+locations. The editor may debounce and resend freely; it is responsible for
+ignoring stale responses, and the backend is responsible for the call being
+deterministic and transactional.
+
+### Colours must match what Run will allow
+
+`project.focalPresence` now takes `fastaFileIds`. Pass the files a run would
+actually read, and the states returned are the states Run gates on: green when
+the entry is in something the run will read, red when it is in none of them,
+grey/unknown when a required file is unavailable. Omitting the field asks about
+the whole project, which is a different question and a different answer.
+
+### Refusals the UI needs sentences for
+
+`DUPLICATE_HEADER_IN_FILE` (the file repeats a header, so analysing it would
+silently discard sequences — the file stays linked and searchable),
+`FOCAL_ENTRIES_NOT_IN_SCOPE`, `FOCAL_PRESENCE_UNKNOWN`,
+`SEARCH_SCOPE_UNAVAILABLE` (a `+` refused rather than persisting a partial
+expansion). Plain search does NOT refuse: it returns its hits plus an
+`unavailable` list of the files it could not read, and the UI must show that
+before the user treats the hit list as complete.

@@ -11,7 +11,11 @@ import type {
   FastaLoadResult,
   FocalStringValidation,
   MolecularDiagnosisResult,
+  OpenProjectResult,
+  ProjectCapabilities,
+  SourceStatusPayload,
 } from '../../backendContract';
+import type { SourceActivity } from './sourceStatus';
 
 /**
  * One coherent state model for the whole application.
@@ -74,6 +78,36 @@ export type DiagnosisRunState =
     }
   | { readonly status: 'failed'; readonly error: BackendError };
 
+/**
+ * The persistent project this session has open, if any.
+ *
+ * `sources` is a live reading of the filesystem refreshed at lifecycle points,
+ * NOT a stored project property: nothing here is ever written back. It is
+ * replaced wholesale by whatever the backend last reported.
+ */
+export interface OpenProject {
+  readonly projectDir: string;
+  readonly outputsDir: string;
+  readonly title: string;
+  readonly capabilities: ProjectCapabilities;
+}
+
+export type ProjectOpenState =
+  | { readonly status: 'closed' }
+  | { readonly status: 'opening'; readonly projectDir: string }
+  | { readonly status: 'open'; readonly project: OpenProject }
+  | { readonly status: 'failed'; readonly projectDir: string; readonly error: BackendError };
+
+export interface SourcesState {
+  readonly items: readonly SourceStatusPayload[];
+  /** Per-file transient work, so the UI can say "Re-indexing" instead of "Changed". */
+  readonly activity: Readonly<Record<string, SourceActivity>>;
+  /** True while a project-wide refresh is in flight. */
+  readonly refreshing: boolean;
+  /** Timestamp of the last completed refresh, for the "checked just now" line. */
+  readonly checkedAt: number | null;
+}
+
 export interface AppState {
   readonly screen: ScreenId;
   /** Which workspace analysis tab is showing. */
@@ -96,6 +130,10 @@ export interface AppState {
   readonly diagnosisRun: DiagnosisRunState;
   /** Transient banner text, e.g. for actions that are not implemented yet. */
   readonly notice: string | null;
+  /** The persistent project, when one is open. */
+  readonly project: ProjectOpenState;
+  /** Live state of every linked FASTA. */
+  readonly sources: SourcesState;
 }
 
 export const ANALYSIS_ORDER: readonly AnalysisKind[] = [
@@ -134,6 +172,13 @@ const DEFAULT_ANALYSES: AnalysisSelection = {
 
 const EMPTY_HISTORY: FocalHistory = { past: [], future: [] };
 
+const EMPTY_SOURCES: SourcesState = {
+  items: [],
+  activity: {},
+  refreshing: false,
+  checkedAt: null,
+};
+
 let idCounter = 0;
 /** Session-local id. Not a persistence key — there is no persistence yet. */
 export function nextId(prefix: string): string {
@@ -167,6 +212,8 @@ export function createInitialState(): AppState {
     focalValidation: { status: 'idle' },
     diagnosisRun: { status: 'idle' },
     notice: null,
+    project: { status: 'closed' },
+    sources: EMPTY_SOURCES,
   };
 }
 
@@ -202,7 +249,16 @@ export type AppAction =
   | { type: 'removeActiveFocalSet' }
   | { type: 'showNotice'; message: string }
   | { type: 'dismissNotice' }
-  | { type: 'resetDraft' };
+  | { type: 'resetDraft' }
+  | { type: 'projectOpening'; projectDir: string }
+  | { type: 'projectOpened'; result: OpenProjectResult }
+  | { type: 'projectOpenFailed'; projectDir: string; error: BackendError }
+  | { type: 'projectClosed' }
+  | { type: 'sourcesRefreshing' }
+  | { type: 'sourcesRefreshed'; sources: readonly SourceStatusPayload[] }
+  | { type: 'sourcesRefreshFailed' }
+  | { type: 'sourceActivity'; fastaFileId: string; activity: SourceActivity }
+  | { type: 'sourceUpdated'; source: SourceStatusPayload };
 
 /** The first enabled analysis, used when the active tab becomes unavailable. */
 export function firstEnabledAnalysis(analyses: AnalysisSelection): AnalysisKind | null {
@@ -469,6 +525,99 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
     case 'resetDraft':
       return { ...createInitialState(), screen: state.screen };
+
+    /* ---------------------------------------------------------------- */
+    /* Persistent project and linked-source status                      */
+    /* ---------------------------------------------------------------- */
+
+    case 'projectOpening':
+      return {
+        ...state,
+        project: { status: 'opening', projectDir: action.projectDir },
+        sources: EMPTY_SOURCES,
+      };
+
+    case 'projectOpened':
+      // Opening already carries a full status sweep, so the workspace can show
+      // a missing file immediately rather than after a first refresh tick.
+      return {
+        ...state,
+        project: {
+          status: 'open',
+          project: {
+            projectDir: action.result.projectDir,
+            outputsDir: action.result.outputsDir,
+            title: action.result.metadata.title,
+            capabilities: action.result.capabilities,
+          },
+        },
+        sources: {
+          items: action.result.sources,
+          activity: {},
+          refreshing: false,
+          checkedAt: Date.now(),
+        },
+      };
+
+    case 'projectOpenFailed':
+      return {
+        ...state,
+        project: { status: 'failed', projectDir: action.projectDir, error: action.error },
+        sources: EMPTY_SOURCES,
+      };
+
+    case 'projectClosed':
+      return { ...state, project: { status: 'closed' }, sources: EMPTY_SOURCES };
+
+    case 'sourcesRefreshing':
+      return { ...state, sources: { ...state.sources, refreshing: true } };
+
+    case 'sourcesRefreshed':
+      return {
+        ...state,
+        sources: {
+          items: action.sources,
+          // A completed sweep supersedes any per-file activity it observed.
+          activity: {},
+          refreshing: false,
+          checkedAt: Date.now(),
+        },
+      };
+
+    case 'sourcesRefreshFailed':
+      // Keep the last known statuses: a failed refresh is not evidence that
+      // anything changed, and blanking the list would look like data loss.
+      return { ...state, sources: { ...state.sources, refreshing: false } };
+
+    case 'sourceActivity': {
+      const activity = { ...state.sources.activity };
+      if (action.activity === 'idle') {
+        delete activity[action.fastaFileId];
+      } else {
+        activity[action.fastaFileId] = action.activity;
+      }
+      return { ...state, sources: { ...state.sources, activity } };
+    }
+
+    case 'sourceUpdated': {
+      const activity = { ...state.sources.activity };
+      delete activity[action.source.fastaFileId];
+      const known = state.sources.items.some(
+        (item) => item.fastaFileId === action.source.fastaFileId,
+      );
+      return {
+        ...state,
+        sources: {
+          ...state.sources,
+          items: known
+            ? state.sources.items.map((item) =>
+                item.fastaFileId === action.source.fastaFileId ? action.source : item,
+              )
+            : [...state.sources.items, action.source],
+          activity,
+        },
+      };
+    }
 
     default:
       return state;

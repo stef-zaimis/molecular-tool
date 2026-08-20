@@ -28,6 +28,7 @@ callers and tests keep working; it is treated as a one-element list.
 from collections.abc import Sequence
 
 __all__ = [
+    "ExactHeaders",
     "FocalSelector",
     "focal_label",
     "header_matches_focal",
@@ -36,7 +37,46 @@ __all__ = [
     "partition_headers",
 ]
 
-#: A single selector or a list of them. Both are accepted everywhere.
+
+class ExactHeaders(tuple):
+    """
+    A focal set expressed as EXACT complete headers rather than substrings.
+
+    Project focal sets resolve a search query to complete headers once, at
+    selection time; membership afterwards is exact identity. Without this
+    marker the resolved headers would be fed back through substring matching
+    and a header such as ``ABC123_extra`` would be dragged in by the entry
+    ``ABC123``, which is not what the user selected.
+
+    It is a tuple subclass so it flows through the existing selector plumbing
+    untouched: `normalise_focal_strings` passes it through and
+    `header_matches_focal` recognises it. Every scientific and output path
+    therefore shares one membership rule.
+    """
+
+    def __new__(cls, headers: Sequence[str]) -> "ExactHeaders":
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for raw in headers:
+            header = str(raw)
+            if not header.strip():
+                raise ValueError("Focal strings cannot be empty.")
+            if header in seen:
+                continue
+            seen.add(header)
+            cleaned.append(header)
+        if not cleaned:
+            raise ValueError("No identifier string entered.")
+        return super().__new__(cls, cleaned)
+
+    @property
+    def members(self) -> frozenset[str]:
+        # Recomputed rather than cached: tuple subclasses cannot carry
+        # non-empty __slots__, and these sets are small.
+        return frozenset(self)
+
+
+#: A single selector, a list of them, or a resolved ExactHeaders selection.
 FocalSelector = str | Sequence[str]
 
 
@@ -56,6 +96,10 @@ def normalise_focal_strings(
             no selectors remain.
     """
     candidates: list[str]
+
+    if isinstance(value, ExactHeaders):
+        # Already resolved, already deduplicated, already validated.
+        return value
 
     if isinstance(value, str):
         candidates = [value]
@@ -87,12 +131,21 @@ def normalise_focal_strings(
 
 
 def header_matches_focal(header: str, focal_strings: Sequence[str]) -> bool:
-    """True when any focal string occurs literally inside `header`."""
+    """
+    Is this header in the focal set?
+
+    Exact identity for an `ExactHeaders` selection, literal substring
+    containment (OR across selectors) otherwise.
+    """
+    if isinstance(focal_strings, ExactHeaders):
+        return header in focal_strings.members
     return any(selector in header for selector in focal_strings)
 
 
 def matching_focal_strings(header: str, focal_strings: Sequence[str]) -> list[str]:
     """Which selectors matched this header. Useful for reporting, not for filtering."""
+    if isinstance(focal_strings, ExactHeaders):
+        return [header] if header in focal_strings.members else []
     return [selector for selector in focal_strings if selector in header]
 
 

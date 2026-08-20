@@ -166,6 +166,43 @@ function registerIpc(): void {
   ipcMain.handle('backend:run-molecular-diagnosis', forward('runMolecularDiagnosis'));
   ipcMain.handle('backend:ping', forward('ping'));
 
+  /**
+   * Project methods. Same thin forwarding rule: the main process holds no
+   * project state and speaks no SQL. The Python service owns the database.
+   */
+  ipcMain.handle('project:create', forward('project.create'));
+  ipcMain.handle('project:open', forward('project.open'));
+  ipcMain.handle('project:close', forward('project.close'));
+  ipcMain.handle('project:set-title', forward('project.setTitle'));
+  ipcMain.handle('project:refresh-sources', forward('project.refreshSources'));
+  ipcMain.handle('project:link-fasta', forward('project.linkFasta'));
+  ipcMain.handle('project:unlink-fasta', forward('project.unlinkFasta'));
+  ipcMain.handle('project:relink-fasta', forward('project.relinkFasta'));
+  ipcMain.handle('project:reindex-fasta', forward('project.reindexFasta'));
+  ipcMain.handle('project:search-headers', forward('project.searchHeaders'));
+  ipcMain.handle('project:list-focal-sets', forward('project.listFocalSets'));
+  ipcMain.handle('project:get-focal-set', forward('project.getFocalSet'));
+  ipcMain.handle('project:create-focal-set', forward('project.createFocalSet'));
+  ipcMain.handle('project:rename-focal-set', forward('project.renameFocalSet'));
+  ipcMain.handle('project:set-focal-set-locked', forward('project.setFocalSetLocked'));
+  ipcMain.handle('project:delete-focal-set', forward('project.deleteFocalSet'));
+  ipcMain.handle('project:replace-focal-entries', forward('project.replaceFocalEntries'));
+  ipcMain.handle('project:add-focal-entries', forward('project.addFocalEntries'));
+  ipcMain.handle('project:remove-focal-entries', forward('project.removeFocalEntries'));
+  ipcMain.handle('project:focal-presence', forward('project.focalPresence'));
+  ipcMain.handle('project:run-molecular-diagnosis', forward('project.runMolecularDiagnosis'));
+
+  /** Choose a directory to hold a project. */
+  ipcMain.handle('dialog:select-project-directory', async () => {
+    if (!mainWindow) return null;
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Choose a project folder',
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    return result.filePaths[0];
+  });
+
   /** Reveal a produced output file in the OS file manager. */
   ipcMain.handle('shell:show-item-in-folder', async (_event, filePath: unknown) => {
     if (typeof filePath !== 'string' || !filePath) return false;

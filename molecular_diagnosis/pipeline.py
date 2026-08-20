@@ -116,6 +116,52 @@ def run_pipeline_core(
         output_dir=output_dir,
     )
 
+    return run_pipeline_on_sequences(
+        sequences=sequences,
+        selectors=selectors,
+        focal_headers=focal_headers,
+        non_focal_headers=non_focal_headers,
+        alignment_length=alignment_length,
+        source_label=str(fasta_path),
+        output_dir=output_dir,
+        include_ambiguous_dmc_bd=include_ambiguous_dmc_bd,
+        include_gappy_consensus_dmc_sites=include_gappy_consensus_dmc_sites,
+        min_combination_length=min_combination_length,
+        max_combination_length=max_combination_length,
+        start_combination_length=start_combination_length,
+        initial_diagnostic_combinations=initial_diagnostic_combinations,
+        initial_combinations_tested_by_length=initial_combinations_tested_by_length,
+    )
+
+
+def run_pipeline_on_sequences(
+    *,
+    sequences: dict[str, str],
+    selectors: FocalSelector,
+    focal_headers: list[str],
+    non_focal_headers: list[str],
+    alignment_length: int,
+    source_label: str,
+    output_dir: str | Path,
+    include_ambiguous_dmc_bd: bool = False,
+    include_gappy_consensus_dmc_sites: bool = False,
+    min_combination_length: int = 1,
+    max_combination_length: int = 2,
+    start_combination_length: int = 1,
+    initial_diagnostic_combinations: list[tuple[int, ...]] | None = None,
+    initial_combinations_tested_by_length: dict[int, int] | None = None,
+) -> PipelineResult:
+    """
+    The pipeline body, over sequences that are ALREADY parsed and verified.
+
+    Extracted from `run_pipeline_core` so a multi-file run can combine several
+    verified alignments in memory instead of writing and re-parsing a temporary
+    combined FASTA. `run_pipeline_core` calls straight through to it, so the
+    single-file path is unchanged.
+
+    `source_label` is what the report prints as the input; it is a label only.
+    """
+    output_dir = Path(output_dir)
     ref_id = focal_headers[0]
 
     focal_sequences = [
@@ -155,7 +201,7 @@ def run_pipeline_core(
 
     write_text_report(
         output_path=txt_output_path,
-        fasta_path=fasta_path,
+        fasta_path=source_label,
         output_dir=output_dir,
         focal_strings=selectors,
         sequences=sequences,
