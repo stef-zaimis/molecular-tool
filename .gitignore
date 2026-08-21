@@ -220,3 +220,17 @@ __marimo__/
 # Input and Output folder contents
 input/*
 output/*
+
+# Node / Electron
+node_modules/
+.vite/
+out/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local environment
+.env.local
+.env.*.local
