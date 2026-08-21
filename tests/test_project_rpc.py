@@ -635,3 +635,268 @@ def test_a_failed_open_leaves_the_current_project_open(service, project_dir, fas
 
     focal_sets = service.ok("project.listFocalSets")["focalSets"]
     assert [entry["id"] for entry in focal_sets] == [set_id]
+
+
+# ---------------------------------------------------------------------------
+# The draft-editing surface the workspace uses
+# ---------------------------------------------------------------------------
+
+
+def test_save_focal_set_creates_then_updates_over_the_wire(service, project_dir, fasta):
+    service.ok("project.create", {"projectDir": str(project_dir), "title": "Test"})
+    service.ok("project.linkFasta", {"path": str(fasta)})
+
+    created = service.ok(
+        "project.saveFocalSet",
+        {"title": "Targets", "headers": ["focal_1|AU|Target", "focal_2|GB|Target"]},
+    )["focalSet"]
+    assert created["title"] == "Targets"
+    assert [entry["header"] for entry in created["entries"]] == [
+        "focal_1|AU|Target",
+        "focal_2|GB|Target",
+    ]
+
+    updated = service.ok(
+        "project.saveFocalSet",
+        {
+            "focalSetId": created["id"],
+            "title": "Renamed",
+            "headers": ["focal_1|AU|Target", "typed_by_hand"],
+        },
+    )["focalSet"]
+    assert updated["id"] == created["id"]
+    assert updated["title"] == "Renamed"
+    # A header in no FASTA is still a member; presence reports it, Save keeps it.
+    assert [entry["header"] for entry in updated["entries"]] == [
+        "focal_1|AU|Target",
+        "typed_by_hand",
+    ]
+    assert len(service.ok("project.listFocalSets")["focalSets"]) == 1
+
+
+def test_saving_a_locked_focal_set_is_refused_over_the_wire(service, project_dir, fasta):
+    _file_id, set_id = open_with_focal_set(service, project_dir, fasta)
+    service.ok("project.setFocalSetLocked", {"focalSetId": set_id, "locked": True})
+
+    response = service.call(
+        "project.saveFocalSet",
+        {"focalSetId": set_id, "title": "Changed", "headers": ["focal_1|AU|Target"]},
+    )
+
+    assert response["ok"] is False
+    assert response["error"]["code"] == "FOCAL_SET_LOCKED"
+
+
+def test_header_presence_serves_unsaved_draft_headers(service, project_dir, fasta, tmp_path):
+    file_id, _set_id = open_with_focal_set(service, project_dir, fasta)
+    other = write_fasta(tmp_path / "b.fasta", [("b1|X|Target", "AACCGGTT")])
+    other_id = service.ok("project.linkFasta", {"path": str(other)})["fastaFileId"]
+
+    entries = service.ok(
+        "project.headerPresence",
+        {
+            "headers": ["focal_1|AU|Target", "b1|X|Target", "never_typed_correctly"],
+            "selectedFastaFileId": file_id,
+        },
+    )["entries"]
+    states = {entry["header"]: entry["state"] for entry in entries}
+
+    assert states["focal_1|AU|Target"] == "present_current"
+    assert states["b1|X|Target"] == "present_other"
+    assert states["never_typed_correctly"] == "missing"
+    assert entries[1]["occurrences"] == {other_id: 1}
+
+
+def test_header_presence_all_files_scope(service, project_dir, fasta, tmp_path):
+    file_id, _set_id = open_with_focal_set(service, project_dir, fasta)
+    other = write_fasta(tmp_path / "b.fasta", [("b1|X|Target", "AACCGGTT")])
+    other_id = service.ok("project.linkFasta", {"path": str(other)})["fastaFileId"]
+
+    entries = service.ok(
+        "project.headerPresence",
+        {"headers": ["b1|X|Target"], "fastaFileIds": [file_id, other_id]},
+    )["entries"]
+    assert entries[0]["state"] == "present_current"
+
+    scoped = service.ok(
+        "project.headerPresence", {"headers": ["b1|X|Target"], "fastaFileIds": [file_id]}
+    )["entries"]
+    assert scoped[0]["state"] == "missing"
+
+
+def test_match_focal_headers_over_the_wire(service, project_dir, fasta):
+    open_with_focal_set(service, project_dir, fasta)
+
+    result = service.ok(
+        "project.matchFocalHeaders",
+        {"query": "TARGET", "headers": ["focal_1|AU|Target", "other_1|FR|Contrast"]},
+    )
+    assert result["matched"] == ["focal_1|AU|Target"]
+
+    refused = service.call(
+        "project.matchFocalHeaders", {"query": "  ", "headers": ["focal_1|AU|Target"]}
+    )
+    assert refused["ok"] is False
+    assert refused["error"]["code"] == "FOCAL_QUERY_EMPTY"
+
+
+def test_the_draft_surface_rejects_malformed_payloads(service, project_dir, fasta):
+    open_with_focal_set(service, project_dir, fasta)
+
+    for method, params in (
+        ("project.saveFocalSet", {"title": "T", "headers": "not-a-list"}),
+        ("project.saveFocalSet", {"title": "T"}),
+        ("project.headerPresence", {"headers": [1, 2]}),
+        ("project.matchFocalHeaders", {"query": "x"}),
+    ):
+        response = service.call(method, params)
+        assert response["ok"] is False, method
+        assert response["error"]["code"] == "INVALID_PARAMETER", method
+
+
+def test_resolve_focal_add_query_is_uncapped_over_the_wire(service, project_dir, tmp_path):
+    """
+    `+` must never truncate. The capped preview and the uncapped expansion are
+    different operations, and only the preview may cap.
+    """
+    service.ok("project.create", {"projectDir": str(project_dir), "title": "Big"})
+    records = [(f"BIG{index:04d}|AU|Target", "AACCGGTT") for index in range(240)]
+    records.append(("outgroup|XX|Contrast", "AGCTGGTT"))
+    big = write_fasta(tmp_path / "many.fasta", records)
+    service.ok("project.linkFasta", {"path": str(big)})
+
+    resolved = service.ok("project.resolveFocalAddQuery", {"query": "Target"})
+    assert len(resolved["headers"]) == 240
+
+    preview = service.ok("project.searchHeaders", {"query": "Target", "limit": 200})
+    assert len(preview["hits"]) == 200
+
+    # And it wrote nothing.
+    assert service.ok("project.listFocalSets")["focalSets"] == []
+
+
+def test_resolve_focal_add_query_refuses_an_unsearchable_scope(
+    service, project_dir, fasta, tmp_path
+):
+    open_with_focal_set(service, project_dir, fasta)
+    gone = write_fasta(tmp_path / "gone.fasta", [("g1|Target", "AACCGGTT")])
+    service.ok("project.linkFasta", {"path": str(gone)})
+    os.remove(gone)
+
+    response = service.call("project.resolveFocalAddQuery", {"query": "Target"})
+
+    assert response["ok"] is False
+    assert response["error"]["code"] == "SEARCH_SCOPE_UNAVAILABLE"
+    assert "gone.fasta" in response["error"]["detail"]
+
+
+def test_resolve_focal_add_query_honours_scope_and_empty_queries(
+    service, project_dir, fasta, tmp_path
+):
+    file_id, _set_id = open_with_focal_set(service, project_dir, fasta)
+    other = write_fasta(tmp_path / "b.fasta", [("b1|ES|Target", "AACCGGTT")])
+    other_id = service.ok("project.linkFasta", {"path": str(other)})["fastaFileId"]
+
+    only_a = service.ok(
+        "project.resolveFocalAddQuery", {"query": "Target", "fastaFileIds": [file_id]}
+    )
+    assert only_a["headers"] == ["focal_1|AU|Target", "focal_2|GB|Target"]
+
+    only_b = service.ok(
+        "project.resolveFocalAddQuery", {"query": "Target", "fastaFileIds": [other_id]}
+    )
+    assert only_b["headers"] == ["b1|ES|Target"]
+
+    refused = service.call("project.resolveFocalAddQuery", {"query": "  "})
+    assert refused["ok"] is False
+    assert refused["error"]["code"] == "FOCAL_QUERY_EMPTY"
+
+
+# ---------------------------------------------------------------------------
+# Vetting candidates, and the per-source lock
+# ---------------------------------------------------------------------------
+
+
+def test_validate_fasta_candidate_needs_no_open_project(service, fasta):
+    """The new-project screen runs before any database exists."""
+    result = service.ok("project.validateFastaCandidate", {"path": str(fasta)})["candidate"]
+
+    assert result["displayName"] == "beetles.fasta"
+    assert result["sequenceCount"] == 4
+    assert result["alignmentLength"] == 8
+
+
+def test_validate_fasta_candidate_refuses_bad_input_by_content(service, tmp_path):
+    ragged = write_fasta(tmp_path / "ragged.fasta", [("a|X", "AACC"), ("b|X", "AACCTT")])
+    unaligned = service.call("project.validateFastaCandidate", {"path": str(ragged)})
+    assert unaligned["ok"] is False
+    assert unaligned["error"]["code"] == "FASTA_NOT_ALIGNED"
+    assert unaligned["error"]["message"] == "The FASTA file needs to be aligned."
+
+    # Not a FASTA at all, despite the extension.
+    spreadsheet = tmp_path / "data.fasta"
+    spreadsheet.write_text("id,count\nA,1\n", encoding="utf-8")
+    not_fasta = service.call("project.validateFastaCandidate", {"path": str(spreadsheet)})
+    assert not_fasta["ok"] is False
+    assert not_fasta["error"]["code"] == "FASTA_EMPTY"
+
+    missing = service.call(
+        "project.validateFastaCandidate", {"path": str(tmp_path / "gone.fasta")}
+    )
+    assert missing["ok"] is False
+    assert missing["error"]["code"] == "FASTA_NOT_FOUND"
+
+
+def test_linking_an_invalid_fasta_leaves_no_source_row_over_the_wire(
+    service, project_dir, tmp_path
+):
+    service.ok("project.create", {"projectDir": str(project_dir), "title": "T"})
+    ragged = write_fasta(tmp_path / "ragged.fasta", [("a|X", "AACCGGTT"), ("b|X", "AACC")])
+
+    response = service.call("project.linkFasta", {"path": str(ragged)})
+
+    assert response["ok"] is False
+    assert response["error"]["code"] == "FASTA_NOT_ALIGNED"
+    assert service.ok("project.refreshSources")["sources"] == []
+
+
+def test_a_source_can_be_locked_and_unlocked_over_the_wire(service, project_dir, fasta):
+    file_id, _set_id = open_with_focal_set(service, project_dir, fasta)
+
+    locked = service.ok(
+        "project.setFastaFileLocked", {"fastaFileId": file_id, "locked": True}
+    )["source"]
+    assert locked["locked"] is True
+    assert service.ok("project.refreshSources")["sources"][0]["locked"] is True
+
+    # A locked source refuses to be unlinked.
+    refused = service.call("project.unlinkFasta", {"fastaFileId": file_id})
+    assert refused["ok"] is False
+    assert refused["error"]["code"] == "FASTA_FILE_LOCKED"
+
+    # But it still analyses.
+    run = service.ok(
+        "project.runMolecularDiagnosis",
+        {
+            "focalSetId": _set_id,
+            "fastaFileIds": [file_id],
+            "singleFile": True,
+            "options": RUN_OPTIONS,
+        },
+    )
+    assert run["sequenceCount"] == 4
+
+    unlocked = service.ok(
+        "project.setFastaFileLocked", {"fastaFileId": file_id, "locked": False}
+    )["source"]
+    assert unlocked["locked"] is False
+    assert service.ok("project.unlinkFasta", {"fastaFileId": file_id})["removed"] == file_id
+
+
+def test_a_lock_survives_closing_and_reopening_the_project(service, project_dir, fasta):
+    file_id, _set_id = open_with_focal_set(service, project_dir, fasta)
+    service.ok("project.setFastaFileLocked", {"fastaFileId": file_id, "locked": True})
+    service.ok("project.close")
+
+    reopened = service.ok("project.open", {"projectDir": str(project_dir)})
+    assert reopened["sources"][0]["locked"] is True

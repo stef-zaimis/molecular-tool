@@ -8,6 +8,16 @@ interface HelpButtonProps {
   readonly text: string;
   /** Accessible name, e.g. "About Molecular Diagnosis". */
   readonly label: string;
+  /**
+   * Which surface the dot is drawn ON.
+   *
+   * The default two-tone treatment is a `--c-surface` disc, which is correct on
+   * the page background and INVISIBLE on a `--c-surface` FASTA row. Page 3 of
+   * the design draws the row's dots the other way round — a `--c-bg` disc with
+   * a `--c-muted` glyph — so the row asks for that variant rather than every
+   * dot in the app being changed to suit one context.
+   */
+  readonly variant?: 'default' | 'on-row';
 }
 
 const TOOLTIP_WIDTH = 317;
@@ -37,7 +47,7 @@ interface Position {
  * Opens on hover and on keyboard focus, toggles on click, closes on Escape or
  * on pointer/focus leaving.
  */
-export function HelpButton({ text, label }: HelpButtonProps): JSX.Element {
+export function HelpButton({ text, label, variant = 'default' }: HelpButtonProps): JSX.Element {
   const [open, setOpen] = useState(false);
   const [pinned, setPinned] = useState(false);
   const [position, setPosition] = useState<Position | null>(null);
@@ -112,7 +122,7 @@ export function HelpButton({ text, label }: HelpButtonProps): JSX.Element {
       <button
         ref={buttonRef}
         type="button"
-        className={`help__dot${open ? ' is-open' : ''}`}
+        className={`help__dot help__dot--${variant}${open ? ' is-open' : ''}`}
         aria-label={label}
         aria-expanded={open}
         aria-describedby={open ? tooltipId : undefined}

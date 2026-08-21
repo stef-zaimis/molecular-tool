@@ -40,10 +40,16 @@
   --c-minimize-hover: #886750;
   --c-focus-ring: #a8bcd8;
 
-  /* Focal-string token states (measured from screen 3's STRING area). */
+  /* Focal-entry presence states (green/red measured from screen 3's STRING
+     area; the other two are derived in the same muted register, since the
+     mockups only draw the two-state case). */
   --c-token-match: #82b987;
   --c-token-nomatch: #d39da7;
   --c-token-neutral: #b7c0cf;
+  /* Present in the project, but not in the SELECTED file. */
+  --c-token-elsewhere: #d8b07a;
+  /* Presence could not be established, e.g. a linked file is missing. */
+  --c-token-unknown: #9aa6ba;
 
   /* ---------------------------------------------------------------- */
   /* Typography                                                        */
@@ -126,6 +132,70 @@
   --w-field: 543px;
   --w-field-wide: 546px;
 
+  /* Focal-set field and its furniture (screens 4/6 of the new design):
+     box x 114..914 (800 wide), 143 tall; undo/redo plate 97x33. */
+  --w-focal-box: 800px;
+  --h-focal-box: 143px;
+  --h-focal-box-min: 96px;
+  --h-focal-box-max: 420px;
+  --size-focal-grip: 14px;
+
+  /* The upper focal controls were cramped; only they are loosened. */
+  --gap-focal-row: 20px;
+  /*
+   * Clearance between the STRING field's Enter chip and its help dot. The chip
+   * overhangs the field wrapper, so the row's own gap is not enough.
+   */
+  --gap-string-help: 6px;
+  --gap-focal-editor: 30px;
+  --gap-title-save: 42px;
+  /* Arrow lane in the FASTA pool select, so a long name never runs under it. */
+  --pad-pool-arrow: 46px;
+  /* The Search row under the box: 745 + a 55px ENTER chip = the box width. */
+  --h-search-row: 19px;
+
+  /* Focal-set library rows (screen 6): 33 tall on a 41.3 step. */
+  --h-library-row: 33px;
+  --gap-library-row: 8px;
+  --h-library-max: 260px;
+  --w-library-count: 96px;
+  --w-library-actions: 68px;
+
+  /* The right pane: selectors + library, right-anchored at the design's width
+     (x 1060..1871 of 1920, plus the 49px right margin). */
+  --w-right-pane: 860px;
+
+  /*
+   * The visualizer's light frame: a full-height LEFT RAIL, which is also the
+   * drag handle, plus an 11px band above and below the panel. One rail, not
+   * two — see UI_NOTES.
+   */
+  --w-viewer-rail: 11px;
+  --h-viewer-frame: 11px;
+
+  /* Page 3's left padding: the heading and the FASTA table start here. */
+  --pad-project-page-x: 63px;
+
+  /* FASTA rows, measured from page 3 of the new design. The row is 1806px
+     wide inside a 1920px window, starting at x=63 with the page padding. */
+  --w-source-table: 1806px;
+  --h-source-row: 33px;
+  --gap-source-row: 8px;
+  --w-source-edge: 11px;
+  --w-source-index: 51px;
+  /* Three fixed columns whose right edges reproduce the reference's, so the
+     numbers line up down the list and the first row's unit labels hang off
+     them without shifting anything. */
+  --w-source-metric-1: 188px;
+  --w-source-metric-2: 188px;
+  --w-source-metric-3: 173px;
+  --w-source-actions: 236px;
+  --size-source-icon: 24px;
+  /* Room to the right of each right-aligned value for its unit + help dot. */
+  --pad-source-unit: 96px;
+  --w-source-unit-text: 58px;
+  --fs-source-index: 21px;
+
   /* Rhythm between stacked form rows / checkbox rows. */
   --row-step: 43px;
   --checkbox-row-step: 53px;
@@ -155,7 +225,6 @@
    * ends, a #2D3541 track and a #7F92AE thumb drawn over it.
    */
   --w-scrollbar: 8px;
-  --w-viewer-scrollbar: 11px;
   --c-scroll-track: var(--c-chrome);
   --c-scroll-thumb: var(--c-muted);
   /* Hover/active stay on the same hue rather than introducing a new colour. */

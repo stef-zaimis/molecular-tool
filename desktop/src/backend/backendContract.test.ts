@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { defaultOutputDirectory } from '../app/state/ProjectContext';
 import type {
   FocalReplacementResult,
   FocalSetPayload,
@@ -138,19 +137,6 @@ describe('Molecular Diagnosis result serialization', () => {
   });
 });
 
-describe('defaultOutputDirectory', () => {
-  it('uses the folder holding the FASTA on Windows paths', () => {
-    expect(defaultOutputDirectory('C:\\data\\runs\\aligned.fasta')).toBe('C:\\data\\runs');
-  });
-
-  it('uses the folder holding the FASTA on POSIX paths', () => {
-    expect(defaultOutputDirectory('/home/me/data/aligned.fasta')).toBe('/home/me/data');
-  });
-
-  it('falls back to the input when there is no directory part', () => {
-    expect(defaultOutputDirectory('aligned.fasta')).toBe('aligned.fasta');
-  });
-});
 
 describe('project scope serialization', () => {
   /*

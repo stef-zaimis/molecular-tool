@@ -48,7 +48,8 @@ export type BackendErrorCode =
   | 'SCOPE_MISMATCH'
   | 'DUPLICATE_HEADER_IN_FILE'
   | 'DUPLICATE_HEADER_ACROSS_FILES'
-  | 'INCOMPATIBLE_ALIGNMENT_LENGTHS';
+  | 'INCOMPATIBLE_ALIGNMENT_LENGTHS'
+  | 'FASTA_FILE_LOCKED';
 
 export interface BackendError {
   readonly code: BackendErrorCode | string;
@@ -229,7 +230,30 @@ export interface SourceStatusPayload {
   readonly sequenceCount: number | null;
   readonly alignmentLength: number | null;
   readonly duplicateHeaderCount: number;
+  /**
+   * A locked source may be analysed but not unlinked or renamed.
+   *
+   * Locking protects the LINK, not the data — the backend refuses the unlink,
+   * so this is a property of the project rather than a hidden button.
+   */
+  readonly locked: boolean;
   readonly message: string | null;
+}
+
+/**
+ * A FASTA vetted BEFORE it is linked.
+ *
+ * Produced by `project.validateFastaCandidate`, which needs no open project —
+ * the new-project screen has to check files before any database exists. It runs
+ * the same scan the indexer does, so a file accepted here cannot be rejected at
+ * link time for a reason the user was never shown.
+ */
+export interface FastaCandidate {
+  readonly path: string;
+  readonly displayName: string;
+  readonly sequenceCount: number;
+  readonly alignmentLength: number;
+  readonly duplicateHeaderCount: number;
 }
 
 export interface ProjectCapabilities {
@@ -330,6 +354,62 @@ export interface FocalQueryResult {
   /** Every exact header the query resolved to. Never the query itself. */
   readonly matched: readonly string[];
   readonly added: readonly string[];
+}
+
+/**
+ * The explicit Save the workspace performs.
+ *
+ * `focalSetId: null` creates the set and its entries in one transaction; an id
+ * updates title + membership in place, preserving entry ids (and their cached
+ * locations) for headers that survive the diff.
+ *
+ * Nothing else in focal editing writes: the renderer holds a working copy, and
+ * this is the only call that commits it.
+ */
+export interface SaveFocalSetRequest {
+  readonly focalSetId?: string | null;
+  readonly title: string;
+  /** Exact headers. Ones matching no FASTA are still valid members. */
+  readonly headers: readonly string[];
+}
+
+/**
+ * Presence for arbitrary headers, including ones in an UNSAVED draft.
+ *
+ * Answered from the header index with one batched lookup: no FASTA is opened,
+ * hashed or reindexed, and no `focal_entry_location` row is created. Safe to
+ * call on a debounce while the user types.
+ */
+export interface HeaderPresencePayload {
+  readonly header: string;
+  readonly state: FocalPresenceState;
+  /** fastaFileId -> how many records in that file carry this exact header. */
+  readonly occurrences: Readonly<Record<string, number>>;
+}
+
+/**
+ * What `+` WOULD add, resolved but not added.
+ *
+ * Uncapped and non-mutating. `SearchHeadersResult` is a capped PREVIEW and must
+ * never be used to expand `+`: a query matching 300 headers has to yield all
+ * 300, or the focal set silently ends up smaller than the user asked for.
+ */
+export interface ResolveFocalAddQueryResult {
+  readonly query: string;
+  /** Every matching complete header, in project-file then record order. */
+  readonly headers: readonly string[];
+}
+
+/**
+ * `-` over a working copy.
+ *
+ * Runs in Python so the renderer does not need a second implementation of
+ * `str.casefold()`; `toLowerCase()` is not the same function, and the two
+ * would eventually disagree about which member a `-` removes.
+ */
+export interface MatchFocalHeadersResult {
+  readonly query: string;
+  readonly matched: readonly string[];
 }
 
 export interface RelinkResult {

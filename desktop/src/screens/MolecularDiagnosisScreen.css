@@ -1,12 +1,20 @@
 /*
- * Screen 3 — measured against docs/03-molecular-diagnosis.png (1920x1080).
- *   body starts        y 110
- *   focal title input  x 371..913, y 134..166   Save x 915..993
- *   string input       x 371..913, y 177..208   Enter x 915..1011
- *   token editor       x 115..913, y 226..368   undo/redo x 915..1013
- *   checkbox rows      x 410..443, y 440 / 494
- *   spinners           x 812..913, y 572 / 625
- *   alignment panel    starts x 1049
+ * Screens 4 and 6 — measured against docs/new/all_pages-20Aug2026.svg
+ * (1920x1080):
+ *
+ *   focal title input   x 370..914, y 130..163   Enter x 914..1011
+ *   saved title heading x 114,      y 137..183   SAVE  x 497..576
+ *   string input        x 370..914, y 183..216   Enter x 914..1011
+ *   +/- discs           x 167 / 207, y 184 (30x30)
+ *   FASTA POOL select   x 370..914, y 243..276
+ *   download button     x  71..104, y 313..346
+ *   focal box           x 114..914, y 313..456
+ *   undo/redo plate     x 914..1011, y 313..346
+ *   Search row          x 114..914, y 460..479
+ *   viewer left edge    x 1049 (default snap)
+ *
+ * The visualizer is an OVERLAY, not a flex sibling: dragging it wider must
+ * never reflow the controls in this column.
  */
 
 .diagnosis {
@@ -42,11 +50,34 @@
   /* Anchoring would otherwise jump the pane when a result panel appears. */
   overflow-anchor: none;
   /*
-   * A transparent right border insets the scrollbar from the pane edge so it
-   * does not sit flush against the alignment viewer rail. Border-box sizing
-   * keeps the pane the same overall width, so nothing else moves.
+   * PADDING, not a border, on the right.
+   *
+   * Both inset the content by 10px, but a border also pulls the CLIP edge in,
+   * and the STRING row's help dot has to reach 1047 — six pixels past Enter and
+   * one before the viewer's rail. With padding the row may overhang into that
+   * last 10px and still be painted, because `overflow: hidden` clips at the
+   * padding box.
    */
+  padding-right: 10px;
+}
+
+/*
+ * ...which means the scrollbar would now sit flush against the viewer rail,
+ * and the two read as one bar when they touch. It is inset instead by making
+ * the bar wider and giving its parts a transparent right border, with
+ * `background-clip: padding-box` so only the inner strip is painted.
+ *
+ * Two classes, so this wins over the shared `.themed-scroll` rules regardless
+ * of the order the two stylesheets happen to be injected in.
+ */
+.themed-scroll.diagnosis__left::-webkit-scrollbar {
+  width: calc(var(--w-scrollbar) + 10px);
+}
+
+.themed-scroll.diagnosis__left::-webkit-scrollbar-track,
+.themed-scroll.diagnosis__left::-webkit-scrollbar-thumb {
   border-right: 10px solid transparent;
+  background-clip: padding-box;
 }
 
 /* Rows must not be squeezed by the flex column once it scrolls. */
@@ -65,8 +96,104 @@
   gap: var(--gap-label-field);
 }
 
-.diagnosis__row + .diagnosis__row {
-  margin-top: 10px;
+/*
+ * ONE rhythm for the upper controls, whichever title state is showing.
+ *
+ * Measured on screens 4 and 6: both draw a 33px title row whose top is 53px
+ * above the top of the STRING row — a 20px gap between the two boxes. The
+ * saved-title state used to leave 6px, which is why it read as cramped while
+ * the input state did not; both now come from this one declaration, so they
+ * cannot drift apart again.
+ */
+.diagnosis__row + .diagnosis__row,
+.diagnosis__title-row + .diagnosis__row {
+  margin-top: var(--gap-focal-row);
+}
+
+/*
+ * The STRING row's help dot must clear the Enter chip, which overhangs the
+ * field wrapper it belongs to. Without this it sits on top of Enter's right
+ * edge; with it there is a clear gap after Enter and it still stops short of
+ * the right-hand pane.
+ */
+/*
+ * Placed at a measured x rather than left to the flex line.
+ *
+ * In the line it sat 21px (the label-to-field gap) after the field WRAPPER,
+ * whose width does not include the Enter chip's overhang — so the dot landed
+ * on top of Enter, and widening the gap made the line too long and squeezed
+ * Enter instead. Out of flow, Enter keeps its measured x 914..1011, the dot
+ * clears it by 6px, and its right edge stops at 1047 — one pixel before the
+ * viewer's rail at 1048.
+ */
+.diagnosis__row--string > .help {
+  position: absolute;
+  left: calc(1011px + var(--gap-string-help));
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+/* ---------------------------------------------------------------- */
+/* Saved title + SAVE (screen 6)                                      */
+/* ---------------------------------------------------------------- */
+
+.diagnosis__title-row {
+  display: flex;
+  align-items: center;
+  /* SAVE needs real distance from the title; 16px read as attached to it. */
+  gap: var(--gap-title-save);
+  /*
+   * The design's own title row height, so this state occupies exactly the band
+   * the input state does and the gap below is the same 20px in both. It used to
+   * be `min-height` plus a 6px bottom margin, which is where the cramping came
+   * from.
+   */
+  height: var(--h-input);
+  /* The heading starts at the box's left edge, not the label column. */
+  padding-left: 114px;
+}
+
+.diagnosis__title {
+  margin: 0;
+  font-size: var(--fs-base);
+  font-weight: var(--fw-bold);
+  line-height: 1.1;
+  color: var(--c-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 420px;
+}
+
+.diagnosis__save {
+  height: var(--h-action-button);
+  padding: 0 var(--pad-action-button-x);
+  background: var(--c-chrome);
+  color: var(--c-text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-base);
+  line-height: 1;
+  transition: background-color 90ms linear;
+}
+
+.diagnosis__save:hover:not(:disabled) {
+  background: var(--c-chrome-hover);
+}
+
+.diagnosis__save:disabled {
+  background: var(--c-surface);
+  color: var(--c-muted);
+  cursor: default;
+}
+
+.diagnosis__save-state {
+  font-size: var(--fs-tooltip);
+  color: var(--c-muted);
+  white-space: nowrap;
+}
+
+.diagnosis__save-state.is-dirty {
+  color: var(--c-token-elsewhere);
 }
 
 .diagnosis__label {
@@ -139,9 +266,116 @@
 /* ---------------------------------------------------------------- */
 
 .diagnosis__editor {
-  margin-top: 16px;
-  /* The import icon sits left of the box, which itself starts at x=115. */
+  margin-top: var(--gap-focal-editor);
+  /* The import icon sits left of the box, which itself starts at x=114. */
   padding-left: 71px;
+}
+
+/* ---------------------------------------------------------------- */
+/* FASTA POOL                                                         */
+/* ---------------------------------------------------------------- */
+
+.diagnosis__pool-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.diagnosis__pool {
+  width: var(--w-field);
+  height: var(--h-input);
+  /*
+   * The right padding reserves the arrow's lane. A long file name is truncated
+   * by the select itself rather than sliding underneath the arrow.
+   */
+  padding: 0 var(--pad-pool-arrow) 0 var(--pad-input-x);
+  border: none;
+  border-radius: 0;
+  background: var(--c-surface);
+  color: var(--c-text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-base);
+  line-height: 1;
+  appearance: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.diagnosis__pool:focus-visible {
+  outline: 2px solid var(--c-focus-ring);
+  outline-offset: -2px;
+}
+
+/*
+ * The solid triangle the design draws at the field's right edge — muted, not
+ * white: it is an affordance, not content, and white made it shout over the
+ * file name beside it.
+ */
+.diagnosis__pool-wrap::after {
+  content: '';
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  width: 0;
+  height: 0;
+  transform: translateY(-25%);
+  border-left: 11px solid transparent;
+  border-right: 11px solid transparent;
+  border-top: 11px solid var(--c-muted);
+  pointer-events: none;
+}
+
+.diagnosis__pool-wrap:hover::after {
+  border-top-color: var(--c-text);
+}
+
+/* ---------------------------------------------------------------- */
+/* Search row (present in the design, not wired up yet)               */
+/* ---------------------------------------------------------------- */
+
+.diagnosis__search {
+  display: flex;
+  align-items: stretch;
+  width: var(--w-focal-box);
+  height: var(--h-search-row);
+  margin-top: 4px;
+  /* Aligned with the focal box: past the download gutter (33) and its gap (12). */
+  margin-left: 45px;
+  background: var(--c-surface);
+}
+
+.diagnosis__search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0 10px;
+  border: none;
+  background: transparent;
+  color: var(--c-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: var(--h-search-row);
+}
+
+.diagnosis__search-enter {
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+  background: var(--c-chrome);
+  color: var(--c-text);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+/* ---------------------------------------------------------------- */
+/* Estimated run time (label only in this build)                      */
+/* ---------------------------------------------------------------- */
+
+.diagnosis__estimate {
+  width: var(--w-spinner);
+  color: var(--c-muted);
+  font-size: var(--fs-base);
+  line-height: 1;
 }
 
 /* ---------------------------------------------------------------- */
@@ -206,4 +440,13 @@
 /* Restore the wider gap between the spinner and its help dot. */
 .diagnosis__parameter-row--numeric .help {
   margin-left: 10px;
+}
+
+/*
+ * While the visualizer is being dragged the pointer sweeps across the whole
+ * analysis column, and every help dot it crosses would pop a tooltip. The
+ * controls are inert for the duration; the drag owns the pointer.
+ */
+.diagnosis.is-viewer-dragging .diagnosis__left {
+  pointer-events: none;
 }

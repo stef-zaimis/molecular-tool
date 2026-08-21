@@ -1,5 +1,5 @@
 import { useId } from 'react';
-import type { ChangeEvent, KeyboardEvent, ReactNode } from 'react';
+import type { ChangeEvent, KeyboardEvent, ReactNode, RefObject } from 'react';
 import { CheckIcon, SpinnerArrowsIcon } from '../icons/Icons';
 import './Controls.css';
 
@@ -37,6 +37,8 @@ interface TextFieldProps {
   readonly ariaLabel: string;
   readonly id?: string;
   readonly readOnly?: boolean;
+  /** For callers that need to focus the field, e.g. a rename started elsewhere. */
+  readonly inputRef?: RefObject<HTMLInputElement>;
   readonly width?: number | string;
   readonly compact?: boolean;
   /** Native tooltip, used to surface a full path behind a shortened value. */
@@ -47,6 +49,13 @@ interface TextFieldProps {
     readonly onClick: () => void;
     readonly disabled?: boolean;
     readonly title?: string;
+    /**
+     * Accessible name, when the visible label is not distinguishing.
+     *
+     * The design puts "Enter" on several unrelated buttons; the label stays as
+     * drawn, and this says which one it is.
+     */
+    readonly ariaLabel?: string;
   };
 }
 
@@ -62,6 +71,7 @@ export function TextField({
   ariaLabel,
   id,
   readOnly = false,
+  inputRef,
   width,
   compact = false,
   title,
@@ -79,6 +89,7 @@ export function TextField({
     <div className="textfield">
       <input
         id={id}
+        ref={inputRef}
         style={width === undefined ? undefined : { width, flex: '0 0 auto' }}
         className={`textfield__input${compact ? ' is-compact' : ''}`}
         type="text"
@@ -99,6 +110,7 @@ export function TextField({
           onClick={action.onClick}
           disabled={action.disabled}
           title={action.title}
+          aria-label={action.ariaLabel}
         >
           {action.label}
         </button>

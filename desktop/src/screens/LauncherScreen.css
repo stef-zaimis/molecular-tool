@@ -1,9 +1,17 @@
 /*
- * Screen 1 — measured against docs/01-launcher.png (540x289).
- *   title bar   y 0..49
- *   button 1    face x 161..316, y 92..159
- *   button 2    face x 161..360, y 184..251
- *   hard shadow 4px black, offset left and down
+ * Screen 1 — measured against the `page1` layer of
+ * docs/new/all_pages-20Aug2026.svg (540x340 content box).
+ *
+ *   title bar        y 0..49
+ *   CREATE NEW       face x 51..223,  y 69..138
+ *   OPEN EXISTING    face x 53..270,  y 162..235
+ *   RECENTS          face x 53..173,  y 245..275
+ *   BROWSE           face x 53..158,  y 283..312
+ *   hard shadow      4px black, offset left and down
+ *
+ * The design draws CREATE NEW and RECENTS with a light accent bar down their
+ * left edge — the hover/active treatment — so the bar is rendered as the
+ * emphasis marker rather than as decoration on every button.
  */
 
 .launcher {
@@ -17,7 +25,7 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  padding: 42px 0 0 161px;
+  padding: 19px 0 0 51px;
   gap: 24px;
   overflow: hidden;
 }
@@ -34,13 +42,26 @@
   box-shadow: var(--shadow-hard);
   color: var(--c-muted);
   text-align: left;
+  border-left: 4px solid transparent;
   transition: background-color 90ms linear, color 90ms linear, transform 90ms ease-out,
-    box-shadow 90ms ease-out;
+    box-shadow 90ms ease-out, border-color 90ms linear;
+}
+
+/* The lead action sits dark with white text, as drawn. */
+.launcher__button--primary {
+  background: var(--c-chrome);
+  color: var(--c-text);
+  border-left-color: var(--c-text);
 }
 
 .launcher__button:hover {
   background: var(--c-surface-hover);
   color: var(--c-text);
+  border-left-color: var(--c-text);
+}
+
+.launcher__button--primary:hover {
+  background: var(--c-chrome-hover);
 }
 
 /* Pressing sinks the face into its own shadow. */
@@ -48,6 +69,10 @@
   background: var(--c-surface-active);
   transform: translate(-2px, 2px);
   box-shadow: -2px 2px 0 0 var(--c-shadow);
+}
+
+.launcher__button--primary:active {
+  background: var(--c-chrome-active);
 }
 
 .launcher__action,
@@ -68,13 +93,46 @@
 }
 
 /* ---------------------------------------------------------------- */
-/* Unfinished-action notice                                           */
+/* Recents / Browse                                                   */
 /* ---------------------------------------------------------------- */
 
-/*
- * Only ever rendered after the user activates an unimplemented action, so the
- * resting screen stays clean.
- */
+.launcher__sub {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  /* Tightens the pair up under Open Existing, per the reference. */
+  margin-top: -8px;
+}
+
+.launcher__sub-button {
+  padding: 2px 10px 2px 6px;
+  background: var(--c-surface);
+  color: var(--c-muted);
+  font-size: var(--fs-launcher-button);
+  font-weight: var(--fw-bold);
+  line-height: 26px;
+  text-transform: uppercase;
+  text-align: left;
+  border-left: 4px solid transparent;
+  transition: background-color 90ms linear, color 90ms linear, border-color 90ms linear;
+}
+
+.launcher__sub-button--accented {
+  color: var(--c-text);
+  border-left-color: var(--c-text);
+}
+
+.launcher__sub-button:hover {
+  background: var(--c-surface-hover);
+  color: var(--c-text);
+  border-left-color: var(--c-text);
+}
+
+/* ---------------------------------------------------------------- */
+/* Notice                                                             */
+/* ---------------------------------------------------------------- */
+
 .notice--launcher-wrap {
   position: absolute;
   left: 0;

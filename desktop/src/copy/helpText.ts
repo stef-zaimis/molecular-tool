@@ -81,16 +81,32 @@ export const HELP_TEXT = {
     'size that yields results at or above the minimum; if it reaches this limit without ' +
     'stopping, it can be continued from the next size up.',
 
-  /** PROVISIONAL. */
-  focalSetTitle:
-    'A name for this focal set, so it can be recognised later. The name is used for ' +
-    'labelling only and does not affect which sequences are selected.',
-
-  /** PROVISIONAL. */
+  /**
+   * Project-backed focal sets resolve a search to COMPLETE headers once, and
+   * membership afterwards is exact. The colours describe where each exact
+   * header is, not whether a substring matched.
+   */
   focalString:
-    'Each string is matched against the FASTA headers. A string matches a header if it ' +
-    'appears anywhere within it, and matching is case sensitive. Green means the string ' +
-    'matches at least one header, red means it matches none.',
+    'Type a search string and press Enter. In + mode every FASTA header containing it ' +
+    'is added to the set as a complete header; in − mode every entry containing it is ' +
+    'removed. The search string itself is never stored. Green means the entry is in the ' +
+    'selected FASTA, orange means it is only in another one, red means it is in none.',
+
+  sequenceCount:
+    'How many distinct sequence headers this FASTA contained when it was last indexed.',
+
+  alignmentLength:
+    'The number of alignment columns, in base pairs. Every sequence in an aligned FASTA ' +
+    'has the same length, and a file whose sequences differ in length cannot be analysed.',
+
+  pis:
+    'Parsimony-informative sites. Not computed in this build, so it is shown as a dash ' +
+    'rather than as a number that has not been calculated.',
+
+  fastaPool:
+    'Which linked FASTA files this analysis reads. A single file is analysed on its own; ' +
+    'All files combines every linked alignment in memory. Focal entries must be present ' +
+    'inside whichever scope you choose.',
 } as const;
 
 export type HelpTextKey = keyof typeof HELP_TEXT;
@@ -104,7 +120,4 @@ export const UNFINISHED_TEXT = {
   loadFocalStrings:
     'Loading focal strings from a file is not available yet. There is no focal-set ' +
     'file format in this build.',
-  saveFocalSet:
-    'Saving a focal set is not available yet. The set is kept for this session only ' +
-    'and is not written to disk.',
 } as const;

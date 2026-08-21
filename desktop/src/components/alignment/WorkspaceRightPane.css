@@ -1,0 +1,183 @@
+/*
+ * The workspace's right-hand side — measured from screens 4 and 6 of
+ * docs/new/all_pages-20Aug2026.svg (1920x1080):
+ *
+ *   selectors        FOCAL SET LIBRARY x 1252..1541,
+ *                    SEQUENCE VISUALIZER x 1551..1871, y 130..163
+ *   library rows     x 1060..1871
+ *   viewer default   left rail x 1049..1060 (54.6% of 1920)
+ *   viewer frame     y 183..1013 without the library, y 412..1013 with it
+ *
+ * The selectors and the library are RIGHT-ANCHORED at a fixed width; the viewer
+ * is a separate overlay. Dragging the viewer therefore cannot move or resize
+ * them, and it cannot reflow the analysis column underneath either.
+ */
+
+/*
+ * The whole right-hand side, as ONE column over the workspace.
+ *
+ * Being a column is what makes the viewer's top dynamic: the pane takes the
+ * height it needs and the viewer, as the next item, starts a fixed gap below
+ * it. No measurement, no ResizeObserver, no constant per library size.
+ *
+ * It overlays the analysis column rather than sitting beside it, so nothing in
+ * here can reflow the controls underneath — the property the drag depends on.
+ */
+.workspace-right {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  bottom: var(--inset-workspace-bottom);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-height: 0;
+  /* Only the controls inside are interactive; the gaps let clicks through to
+     whatever the column is floating over. */
+  pointer-events: none;
+}
+
+.right-pane {
+  flex: 0 0 auto;
+  /* Right-anchored at the design's width, whatever the window is. */
+  align-self: flex-end;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: var(--w-right-pane);
+  max-width: 100%;
+  padding: 24px 49px 0 0;
+  pointer-events: none;
+}
+
+.right-pane > * {
+  pointer-events: auto;
+}
+
+.right-pane__selectors {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.right-pane__selector {
+  height: var(--h-action-button);
+  padding: 0 10px;
+  background: var(--c-surface);
+  color: var(--c-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-base);
+  line-height: 1;
+  white-space: nowrap;
+  transition: background-color 90ms linear, color 90ms linear;
+}
+
+.right-pane__selector:hover {
+  background: var(--c-surface-hover);
+  color: var(--c-text);
+}
+
+.right-pane__selector.is-active {
+  background: var(--c-chrome);
+  color: var(--c-text);
+}
+
+.right-pane__library {
+  min-height: 0;
+}
+
+/* ---------------------------------------------------------------- */
+/* Sequence visualizer                                                */
+/* ---------------------------------------------------------------- */
+
+/*
+ * The viewer fills the rest of the overlay column, so it always runs to the
+ * workspace's bottom inset however tall the pane above it turned out to be.
+ *
+ * Its LEFT edge is an inline margin percentage set from the drag snap. The
+ * column it lives in overlays the analysis controls, so widening the viewer
+ * never reflows them.
+ *
+ * The 16px top margin is the design's own gap between the selectors and the
+ * frame (y 167 -> y 183).
+ */
+.viewer {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  margin-top: 16px;
+  display: flex;
+  align-items: stretch;
+  pointer-events: auto;
+  transition: margin-left 120ms ease-out;
+}
+
+/* Tracking the pointer must not lag behind it. */
+.viewer.is-dragging {
+  transition: none;
+  user-select: none;
+}
+
+/* ---------------------------------------------------------------- */
+/* The left rail — the visible edge AND the drag handle               */
+/* ---------------------------------------------------------------- */
+
+/*
+ * ONE rail. The design draws a single 11px light bar down the viewer's left
+ * boundary (x 1049..1060 at the default snap) with the panel starting at 1060,
+ * and this is it: the same bar the reference draws, made draggable over its
+ * whole height. There is no second edge element beside it.
+ */
+.viewer__rail {
+  position: relative;
+  flex: 0 0 var(--w-viewer-rail);
+  width: var(--w-viewer-rail);
+  background: var(--c-muted);
+  cursor: col-resize;
+  touch-action: none;
+  transition: background-color 90ms linear;
+}
+
+.viewer__rail:hover,
+.viewer__rail:focus-visible,
+.viewer.is-dragging .viewer__rail {
+  background: var(--c-text);
+}
+
+.viewer__rail:focus-visible {
+  outline: none;
+}
+
+/* The reference's darker thumb, kept: it marks the rail as a handle. */
+.viewer__rail-thumb {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 45%;
+  height: 9%;
+  min-height: 40px;
+  background: var(--c-chrome);
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------------- */
+/* Stage                                                              */
+/* ---------------------------------------------------------------- */
+
+.viewer__stage {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-top: var(--h-viewer-frame) solid var(--c-muted);
+  border-bottom: var(--h-viewer-frame) solid var(--c-muted);
+}
+
+/* The pane owns the workspace insets, so the placeholder must not re-apply them. */
+.viewer__stage .alignment {
+  padding-top: 0;
+  padding-bottom: 0;
+}

@@ -14,6 +14,25 @@ body,
   padding: 0;
 }
 
+/*
+ * Workspace scaling for Windows DPI. `--ui-zoom` is 1 at 1920 CSS px and below
+ * that it is the ratio to 1920, so the app always lays out in the frame its
+ * measurements came from and is painted smaller. The width/height calc undoes
+ * the zoom for the root box itself, so the shell still fills the window
+ * exactly rather than covering `zoom` of it.
+ *
+ * See src/app/uiScale.ts for why this is scaling rather than a second layout.
+ */
+:root {
+  --ui-zoom: 1;
+}
+
+#root {
+  zoom: var(--ui-zoom);
+  width: calc(100vw / var(--ui-zoom));
+  height: calc(100vh / var(--ui-zoom));
+}
+
 body {
   background: var(--c-bg);
   color: var(--c-text);
@@ -25,6 +44,39 @@ body {
   /* A desktop app, not a web page: no text selection except in fields. */
   user-select: none;
   -webkit-font-smoothing: antialiased;
+}
+
+/*
+ * Typography, centrally.
+ *
+ * Form controls do NOT inherit `font-family` from their ancestors — the UA
+ * stylesheet gives `input`, `button`, `select`, `textarea` and `optgroup` a
+ * system font of their own. Anything the application draws must be JetBrains
+ * Mono, so the inheritance is forced here once rather than repeated (and
+ * forgotten) per component.
+ *
+ * The list is deliberately explicit: it is what the audit found, and adding a
+ * control type here is cheaper than discovering a stray system font later.
+ */
+input,
+button,
+select,
+textarea,
+optgroup,
+option {
+  font-family: var(--font-mono);
+}
+
+/*
+ * CodeMirror sets its own font on the editor and the scroller. Both are
+ * overridden at the component level, but this catches any surface it adds.
+ */
+.cm-editor,
+.cm-editor .cm-content,
+.cm-editor .cm-scroller,
+.cm-editor .cm-placeholder,
+.cm-editor .cm-tooltip {
+  font-family: var(--font-mono);
 }
 
 input,

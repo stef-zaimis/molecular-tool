@@ -10,12 +10,13 @@ declare const MAIN_WINDOW_VITE_NAME: string;
 /**
  * Window sizing.
  *
- * The launcher is deliberately a small "setup wizard" window matching
- * docs/01-launcher.png (540x289 content box). Entering project creation
- * grows the window to a workspace size, clamped to the display work area
- * so we never open larger than the user's screen.
+ * The launcher is deliberately a small "setup wizard" window, matching the
+ * page1 layer of docs/new/all_pages-20Aug2026.svg (540x340 content box — the
+ * new design adds the Recents/Browse pair below Open Existing). Entering the
+ * project flow grows the window to a workspace size, clamped to the display
+ * work area so we never open larger than the user's screen.
  */
-const LAUNCHER_SIZE = { width: 540, height: 289 };
+const LAUNCHER_SIZE = { width: 540, height: 340 };
 const WORKSPACE_PREFERRED = { width: 1920, height: 1080 };
 const WORKSPACE_MIN = { width: 1180, height: 760 };
 
@@ -145,6 +146,29 @@ function registerIpc(): void {
   });
 
   /**
+   * Multi-select variant, for linking several FASTAs in one go.
+   *
+   * Returns an array rather than null on cancel: "cancelled" and "chose zero
+   * files" are the same thing to every caller, and an empty array saves each of
+   * them a null check.
+   */
+  ipcMain.handle('dialog:select-fasta-files', async () => {
+    if (!mainWindow) return [];
+
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Select aligned FASTA files',
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+        { name: 'FASTA files', extensions: ['fasta', 'fa', 'fna', 'aln'] },
+        { name: 'All files', extensions: ['*'] },
+      ],
+    });
+
+    if (result.canceled) return [];
+    return result.filePaths;
+  });
+
+  /**
    * Everything scientific goes through the Python service.
    *
    * These handlers are deliberately thin: they validate that a payload is the
@@ -175,7 +199,9 @@ function registerIpc(): void {
   ipcMain.handle('project:close', forward('project.close'));
   ipcMain.handle('project:set-title', forward('project.setTitle'));
   ipcMain.handle('project:refresh-sources', forward('project.refreshSources'));
+  ipcMain.handle('project:validate-fasta-candidate', forward('project.validateFastaCandidate'));
   ipcMain.handle('project:link-fasta', forward('project.linkFasta'));
+  ipcMain.handle('project:set-fasta-file-locked', forward('project.setFastaFileLocked'));
   ipcMain.handle('project:unlink-fasta', forward('project.unlinkFasta'));
   ipcMain.handle('project:relink-fasta', forward('project.relinkFasta'));
   ipcMain.handle('project:reindex-fasta', forward('project.reindexFasta'));
@@ -187,6 +213,10 @@ function registerIpc(): void {
   ipcMain.handle('project:set-focal-set-locked', forward('project.setFocalSetLocked'));
   ipcMain.handle('project:delete-focal-set', forward('project.deleteFocalSet'));
   ipcMain.handle('project:replace-focal-entries', forward('project.replaceFocalEntries'));
+  ipcMain.handle('project:save-focal-set', forward('project.saveFocalSet'));
+  ipcMain.handle('project:header-presence', forward('project.headerPresence'));
+  ipcMain.handle('project:match-focal-headers', forward('project.matchFocalHeaders'));
+  ipcMain.handle('project:resolve-focal-add-query', forward('project.resolveFocalAddQuery'));
   ipcMain.handle('project:add-focal-entries', forward('project.addFocalEntries'));
   ipcMain.handle('project:remove-focal-entries', forward('project.removeFocalEntries'));
   ipcMain.handle('project:focal-presence', forward('project.focalPresence'));

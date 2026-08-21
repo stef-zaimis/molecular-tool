@@ -29,6 +29,7 @@ function payload(
     sequenceCount: 4,
     alignmentLength: 12,
     duplicateHeaderCount: 0,
+    locked: false,
     message: null,
     ...overrides,
   };

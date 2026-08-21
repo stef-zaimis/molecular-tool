@@ -1,67 +1,155 @@
 # REPO_MAP.md
 
-Read-only reconnaissance of `molecular-tool`, branch `feature/ui-revamp`, HEAD `6dac461`.
-Generated 2026-08-18. No files other than this one were created or modified.
+Map of `molecular-tool`, branch `feature/ui-revamp`.
+Last updated 2026-08-22, after the UI correction pass.
+
+The repository is three layers, not one:
+
+1. **The scientific core** — the original Python package (`molecular_diagnosis/`),
+   unchanged in intent since the first map and still the only place DMC science
+   happens.
+2. **The project layer** — `molecular_diagnosis/project/` and
+   `molecular_diagnosis/service/`: a SQLite-backed project format, linked FASTA
+   sources with a live status model, persistent focal sets, and a
+   newline-delimited-JSON service that exposes all of it.
+3. **The desktop UI** — `desktop/`: an Electron + React renderer that never
+   imports Python and never touches the database; it calls named service
+   methods through a preload bridge.
 
 Conventions used below:
-- Line references are `path:line` against the working tree at HEAD.
-- `(UNVERIFIED)` marks a claim I could not confirm from the code alone; each one says what would settle it.
-- Line counts are `wc -l` output and may be off by one where a file lacks a trailing newline.
+- Line references are `path:line` against the working tree.
+- `(UNVERIFIED)` marks a claim not confirmed from the code alone; each one says
+  what would settle it.
+- Line counts are `wc -l` and may be off by one where a file lacks a trailing
+  newline.
+- Sections 4, 6, 7, 10 and 12 analyse the scientific core. They were written
+  against the pre-revamp tree and still describe it: the modules they cover
+  (`core`, `punishments`, `consensus`, `sequence_subsets`, `excel`, `reports`,
+  `pipeline`) have not been restructured since, and `tests/test_parity.py`
+  exists to prove exactly that.
 
 ---
 
 ## 1. INVENTORY
 
-### Live application code
+### The scientific core (Python)
 
 | File | Lines | Purpose | Class |
 |---|---|---|---|
-| `main.py` | 3 | Entry point; imports `launch_gui` and calls it under `__main__`. | **LIVE** |
-| `molecular_diagnosis/__init__.py` | 6 | Package docstring and `__version__ = "0.1.0"`. Exports nothing. | **LIVE** |
-| `molecular_diagnosis/constants.py` | 81 | Output filenames, base→hex colour table, IUPAC tables, punishment thresholds/weights. | **LIVE** |
+| `main.py` | 3 | Entry point for the LEGACY Tkinter app; imports `launch_gui` and calls it. | **LIVE (legacy UI)** |
+| `molecular_diagnosis/__init__.py` | 6 | Package docstring and `__version__`. | **LIVE** |
+| `molecular_diagnosis/constants.py` | 81 | Output filenames, base to hex colour table, IUPAC tables, punishment thresholds/weights. | **LIVE** |
 | `molecular_diagnosis/models.py` | 81 | Frozen dataclasses: `DMCResult`, `FiveSiteResult`, `PunishmentEvent`, `PunishmentResult`, `PunishmentPipelineResult`, `PipelineResult`. | **LIVE** |
-| `molecular_diagnosis/utils.py` | 26 | `next_available_filename` — non-clobbering output naming (`name(2).txt`). | **LIVE** |
-| `molecular_diagnosis/fasta_io.py` | 56 | FASTA parsing, aligned-length validation, focal/non-focal header split. | **LIVE** |
-| `molecular_diagnosis/core.py` | 504 | DMC search: site scoring, focal consensus per column, candidate filtering, n-site combination search, 5-site optimisation, formatting helpers. | **LIVE** |
+| `molecular_diagnosis/utils.py` | 26 | `next_available_filename` - non-clobbering output naming (`name(2).txt`). | **LIVE** |
+| `molecular_diagnosis/fasta_io.py` | 68 | FASTA parsing, aligned-length validation, focal/non-focal header split. | **LIVE** |
+| `molecular_diagnosis/focal.py` | 177 | **The single focal matcher.** Case-sensitive substring containment, OR across selectors, selectors trimmed and deduplicated, empty selector refused. The four places that once wrote `target_string in header` by hand all route through it. | **LIVE** |
+| `molecular_diagnosis/core.py` | 519 | DMC search: site scoring, focal consensus per column, candidate filtering, n-site combination search, 5-site optimisation, formatting. | **LIVE** |
 | `molecular_diagnosis/punishments.py` | 508 | Focal-only punishment/anomaly scoring (POLY / BAL / PRL / INS / EW / BD). | **LIVE** |
-| `molecular_diagnosis/consensus.py` | 344 | Focal consensus sequence (untrimmed + PRL/INS-trimmed) and its text report. Owns its own `ConsensusResult` dataclass. | **LIVE** |
-| `molecular_diagnosis/sequence_subsets.py` | 217 | Ungapped-substring grouping of focal sequences + its Excel writer. Owns `SequenceSubsetGroup`. | **LIVE** |
-| `molecular_diagnosis/excel.py` | 233 | `comparison_output.xlsx` (Full/Gap5/Avg5 sheets) and `punishment_output.xlsx`. | **LIVE** |
-| `molecular_diagnosis/reports.py` | 130 | `DMCs_output.txt` text report writer. | **LIVE** |
-| `molecular_diagnosis/pipeline.py` | 253 | Orchestration: `load_inputs`, `run_pipeline_core`, `run_punishment_core`. The only UI-free composition layer. | **LIVE** |
-| `molecular_diagnosis/gui.py` | 338 | Tkinter main window, parameter widgets, both run buttons, the "continue search" loop. | **LIVE** |
-| `molecular_diagnosis/viewer.py` | 750 | Bitmap-backed FASTA/alignment viewer (`open_fasta_viewer`). Imported by `gui.py:7`. | **LIVE** |
+| `molecular_diagnosis/consensus.py` | 347 | Focal consensus sequence (untrimmed and PRL/INS-trimmed) and its text report. | **LIVE** |
+| `molecular_diagnosis/sequence_subsets.py` | 217 | Ungapped-substring grouping of focal sequences plus its Excel writer. | **LIVE** |
+| `molecular_diagnosis/excel.py` | 239 | `comparison_output.xlsx` (Full/Gap5/Avg5 sheets) and `punishment_output.xlsx`. | **LIVE** |
+| `molecular_diagnosis/reports.py` | 138 | `DMCs_output.txt` text report writer. | **LIVE** |
+| `molecular_diagnosis/pipeline.py` | 300 | Orchestration: `load_inputs`, `run_pipeline_core`, `run_punishment_core`. The only UI-free composition layer. | **LIVE** |
+| `molecular_diagnosis/gui.py` | 338 | **Legacy** Tkinter main window. Still runnable; superseded by `desktop/`. | **LIVE (legacy UI)** |
+| `molecular_diagnosis/viewer.py` | 750 | **Legacy** bitmap-backed FASTA/alignment viewer, imported by `gui.py:7`. | **LIVE (legacy UI)** |
+
+### The project layer (Python)
+
+Everything durable lives here. The renderer holds no SQL and the Electron main
+process holds no project state; this package owns the database exclusively.
+
+| File | Lines | Purpose |
+|---|---|---|
+| `molecular_diagnosis/project/__init__.py` | 25 | Package exports. |
+| `molecular_diagnosis/project/paths.py` | 36 | Where a project's `project.sqlite` and `outputs/` live. |
+| `molecular_diagnosis/project/db.py` | 208 | Connection handling and the migration ladder (`001_initial.sql`, `002_fasta_file_locked.sql`). |
+| `molecular_diagnosis/project/repository.py` | 535 | Every SQL statement in the application. Row dataclasses for projects, FASTA files, the header index, focal sets and entries. |
+| `molecular_diagnosis/project/sources.py` | 304 | The live SOURCE STATUS model: `current`, `unverified`, `stale`, `never_indexed`, `missing`, `unreadable`, plus the persisted `locked` flag. Nothing about availability is stored. |
+| `molecular_diagnosis/project/indexing.py` | 229 | Header indexing and fingerprinting (`indexed_sha256`, size, mtime). |
+| `molecular_diagnosis/project/alignments.py` | 95 | Reading a linked alignment for a run, and vetting a candidate before it is linked. |
+| `molecular_diagnosis/project/locations.py` | 193 | Cached header-to-file locations behind presence answers. |
+| `molecular_diagnosis/project/search.py` | 152 | Header search over the index: the capped preview and the uncapped resolve. |
+| `molecular_diagnosis/project/service.py` | 1421 | `ProjectService` - the operations the UI calls. Owns the rules: a locked focal set refuses every mutation, a locked FASTA refuses unlinking, `+` refuses a partial expansion, a run refuses an out-of-scope focal entry. |
+
+### The service layer (Python)
+
+| File | Lines | Purpose |
+|---|---|---|
+| `molecular_diagnosis/service/__init__.py` | 15 | Package docstring and exports. |
+| `molecular_diagnosis/service/__main__.py` | 71 | `python -m molecular_diagnosis.service`: the stdio loop Electron spawns. Redirects `sys.stdout` to stderr so a stray `print` cannot corrupt the protocol. |
+| `molecular_diagnosis/service/protocol.py` | 192 | Newline-delimited JSON framing. |
+| `molecular_diagnosis/service/errors.py` | 200 | `ServiceError` and the error codes the UI writes sentences for. |
+| `molecular_diagnosis/service/handlers.py` | 435 | `METHODS` and `dispatch`. Non-project methods: `ping`, `loadFasta`, `validateFocalStrings`, `runMolecularDiagnosis`, `runSequencePunishment`. |
+| `molecular_diagnosis/service/projects.py` | 508 | `PROJECT_METHODS` - the 28 `project.*` methods (listed in section 3d). |
+
+### Database schema
+
+| File | Lines | Purpose |
+|---|---|---|
+| `db/001_initial.sql` | 190 | Projects, FASTA files, header index, focal sets and entries. |
+| `db/002_fasta_file_locked.sql` | 18 | Adds `fasta_file.locked`, additive and defaulted so an existing project opens unchanged. Sets `PRAGMA user_version = 2`. |
+| `db/optional_fts5_trigram.sql` | 25 | Optional accelerated search, applied only where SQLite supports it. |
+
+### The desktop UI (`desktop/`)
+
+Electron main plus preload plus React renderer. `src/main.ts` spawns the Python
+service, `src/preload.ts` exposes `window.desktop.*`, and the renderer calls
+that and nothing else.
+
+| Area | Files (lines) | Notes |
+|---|---|---|
+| Shell | `src/main.ts` (303), `src/preload.ts` (339), `src/renderer.tsx` (25), `src/backend/pythonBridge.ts` (262) | Process spawn, IPC forwarding, interpreter resolution. |
+| Contracts | `src/backendContract.ts` (458), `src/contract.ts` (674) | `backendContract.ts` is what actually crosses the boundary; `contract.ts` describes the wider intended architecture and carries the `// BACKEND GAP:` notes. |
+| State | `src/app/state/projectState.ts` (968), `ProjectContext.tsx` (816), `focalDrafts.ts` (271), `sourceStatus.ts` (198), `runGate.ts` (135), `typingBurst.ts` (79) | One reducer plus context. `focalDrafts.ts` holds the saved-versus-working distinction; `typingBurst.ts` is the undo-grouping idle timer. |
+| Scaling | `src/app/uiScale.ts` (80) | `--ui-zoom`: the 1920x1080 design frame, scaled for a high-DPI viewport (section 5b). |
+| Screens | `src/screens/LauncherScreen.tsx` (104), `ProjectScreen.tsx` (258), `MolecularDiagnosisScreen.tsx` (480) | `ProjectScreen` is ONE screen for both project states, before and after Create. |
+| Components | `src/components/sources/SourceTable.tsx` (347), `focal/FocalSetEditor.tsx` (396), `focal/FocalSetLibrary.tsx` (225), `alignment/WorkspaceRightPane.tsx` (211), `alignment/AlignmentPlaceholder.tsx` (37), `analysis/DiagnosisRunPanel.tsx` (159), `controls/*`, `chrome/*`, `icons/Icons.tsx` (340) | `SourceTable` serves candidates and linked sources from ONE `SourceRow`. |
+| Styles | `src/styles/tokens.css` (241), `src/styles/global.css` (220), plus one CSS file per component | Every value in `tokens.css` was measured from the design SVG. |
+
+### Design references
+
+| Path | Status |
+|---|---|
+| `docs/new/all_pages-20Aug2026.svg` | **Authoritative.** Six pages; page 3 is the project/FASTA list, page 4 the new focal set, page 6 the saved focal set with the library. |
+| `docs/new/loading.svg` | Authoritative; not implemented yet. |
+| `docs/all_pages-20Aug2026.svg` | The same drawing at the old path, kept while references migrate. |
+| `docs/legacy/` | **History only.** `01-launcher.png`, `02-project-creation.png`, `02-project-creation.svg`, `03-molecular-diagnosis.png`, `all_pages.svg`. Must not drive new work. |
 
 ### Not live
 
 | File | Lines | Purpose | Class | Evidence |
 |---|---|---|---|---|
-| `molecular_diagnosis/viewer_old.py` | 473 | Earlier canvas-item-based virtualised viewer. Same public name as `viewer.py`, one fewer keyword arg. | **LEGACY-SUSPECTED** | Nothing imports it — a grep for `viewer_old` across all project `.py` files returns only its own file. `gui.py:7` imports `viewer`, not `viewer_old`. It was added in `11487e7` (2026-04-29) *in the same commit* that rewrote `viewer.py`, i.e. checked in as a snapshot of the previous implementation. Untouched since. |
-| `pipeline_verbose.py` | 746 | Self-contained pre-refactor monolith: own `parse_fasta`, `IUPAC`, `COLORS`, `find_dmc_information`, Excel writer, Tk GUI, and an inline per-base FASTA viewer. Own `__main__` block at `pipeline_verbose.py:746`. | **LEGACY-SUSPECTED** | Nothing imports it. Last modified in `517937f` "Adding initial files" (2026-04-27) — the first commit — and never since. Superseded by the `molecular_diagnosis` package. Its `find_dmc_information` (`pipeline_verbose.py:155`) does 1- and 2-site search only, with no punishment, consensus, IUPAC-BD or gap logic. |
-| `consensus_dmc_pipeline.py` | 358 | Standalone consensus + DMC-site-mapping + Word-document script. Own `__main__` block at `consensus_dmc_pipeline.py:357`. | **LEGACY-SUSPECTED** | Nothing imports it. Added in `0875c03` (2026-05-12), whose commit message is literally "changing some naems and adding an old file for reference". It **cannot run in this environment**: it imports `docx` (`consensus_dmc_pipeline.py:2-3`), and `python-docx` is not installed in `.venv` and is not in `requirements.txt` (verified by import attempt under both the venv and system interpreter). It also hardcodes an absolute Linux path (`consensus_dmc_pipeline.py:5`) that does not exist on this machine. Its consensus rule was ported into `molecular_diagnosis/consensus.py`, which says so at `consensus.py:44` ("Consensus rule copied from the older script"). |
+| `molecular_diagnosis/viewer_old.py` | 473 | Earlier canvas-item-based virtualised viewer. | **LEGACY** | Nothing imports it; a grep for `viewer_old` across the project returns only its own file. |
+| `pipeline_verbose.py` | 746 | Self-contained pre-refactor monolith with its own parser, Excel writer, Tk GUI and viewer. | **LEGACY** | Nothing imports it. Untouched since the first commit. |
+| `consensus_dmc_pipeline.py` | 358 | Standalone consensus, DMC-site-mapping and Word-document script. | **LEGACY, UNRUNNABLE** | Imports `docx`, which is neither installed nor in `requirements.txt`, and hardcodes an absolute Linux path. Its consensus rule was ported into `consensus.py`, which says so at `consensus.py:44`. |
 
-### Tests, data, config
+### Config and data
 
-| File | Lines | Purpose | Class |
-|---|---|---|---|
-| `tests/test_core.py` | 55 | Unit tests for scoring helpers and `find_dmc_information`. | **LIVE — one test currently fails**, see §9 |
-| `tests/test_fasta_io.py` | 85 | Unit tests for parsing/validation/header splitting. | **LIVE** |
-| `tests/test_pipeline.py` | 50 | End-to-end smoke test of `run_pipeline_core` output paths. | **LIVE** |
-| `pyproject.toml` | 3 | pytest config only (`pythonpath=["."]`, `testpaths=["tests"]`). No build metadata, no dependency declaration. | **LIVE** |
-| `requirements.txt` | 2 | `openpyxl`, `pillow`. Unpinned. | **LIVE** |
-| `README.md` | ~25 | Feature list. Partly stale — see §4 and §11. | **LIVE (stale content)** |
-| `.gitignore` | ~230 | Standard Python template plus `input/*` and `output/*` at the tail. | **LIVE** |
-| `input/Leptacis_allSequences-BOLD-09March2026_aln.fasta` | — | Real alignment, gitignored. Dimensions in §9. | **DATA** |
-| `input/Leptacis_trial_alignment.fasta` | — | Small hand-made trial alignment, gitignored. | **DATA** |
-| `input/Leptacis_trial_alignment_output.fasta` | — | Re-gapped, lowercased variant of the above. | **DATA** |
-| `output/` | — | Empty directory; contents gitignored. | **DATA** |
-| `.venv/`, `.pytest_cache/`, `__pycache__/` | — | Environment and caches, untracked. | **IGNORE** |
-
-Nothing was deleted. Everything above is still on disk.
+Unchanged: `pyproject.toml` holds pytest settings only, `requirements.txt`
+lists `openpyxl` and `pillow` unpinned, and `input/` and `output/` are
+gitignored. `desktop/package.json` holds the Electron Forge, Vite, Vitest and
+ESLint scripts; `@codemirror/state` and `@codemirror/view` are the only
+non-React runtime dependencies.
 
 ---
 
 ## 2. ENTRY POINTS AND CONTROL FLOW
+
+### The current entry point
+
+**The desktop app.** `npm start` in `desktop/` runs Electron Forge, which loads
+`src/main.ts`. Main spawns `python -m molecular_diagnosis.service` as a child
+process and talks to it in newline-delimited JSON over stdin/stdout; the
+renderer never spawns anything and never sees the scientific code. Walkthrough D
+below follows a run from a click to a written file.
+
+Interpreter resolution, in order: `MOLECULAR_TOOL_PYTHON`, then the project
+`.venv`, then `python`/`python3` on PATH. `MOLECULAR_TOOL_ROOT` overrides the
+repo root. Packaging a bundled interpreter is not addressed.
+
+The Tkinter entry point below still works and is described as it stands, but it
+is the LEGACY UI: it has no project database, no persistent focal sets and no
+multi-file support.
 
 ### Is `main.py` the real entry point?
 
@@ -111,6 +199,34 @@ Note the ordering at `pipeline.py:231-249`: both output paths are reserved *befo
 
 `gui.py:56` `view_fasta()` → `parse_fasta` (a third, independent parse — nothing is cached) → `viewer.open_fasta_viewer(root, sequences)` (`viewer.py:10`). The viewer never receives any analysis result; it gets only the raw `dict[header, sequence]`.
 
+### Walkthrough D - a project-backed Molecular Diagnosis run
+
+1. Launcher: **Create New** or **Open Existing**. Both open a directory picker
+   in main (`dialog.showOpenDialog`), then call `project.create` or
+   `project.open`. They are separate methods on purpose: `create` refuses a
+   folder that already holds a project (`PROJECT_ALREADY_EXISTS`), `open`
+   refuses one that does not (`PROJECT_NOT_FOUND`).
+2. The response carries the project metadata, its capabilities and a full
+   source sweep, so a file that vanished while the app was closed is visible on
+   the first paint.
+3. **Project page** (`ProjectScreen`). Browse vets every chosen file through
+   `project.validateFastaCandidate` BEFORE anything is linked; an unaligned or
+   unreadable file is reported inline and the rest of the selection survives.
+   With a project open, accepted files go straight to `project.linkFasta`;
+   before Create they are held as candidates and linked by Create in order.
+4. Analyses ticked here become the workspace tabs.
+5. **Molecular Diagnosis workspace**. The FASTA pool selects the run scope;
+   `+` resolves through `project.resolveFocalAddQuery` (uncapped, scope-checked)
+   and `-` through `project.matchFocalHeaders`; entry colours come from
+   `project.headerPresence`, debounced and generation-tagged in the renderer.
+6. Editing writes nothing. `project.saveFocalSet` is the only write ordinary
+   editing performs, and `runGate.canRun` refuses a new or dirty draft - checked
+   again inside `runDiagnosis`, not just on the button.
+7. **Run** calls `project.runMolecularDiagnosis` with the focal set id and the
+   scope file ids. The service re-reads and verifies the linked files, then
+   calls the same `pipeline.run_pipeline_core` the Tkinter app calls, writing
+   into the project's `outputs/` directory.
+
 ### Call graph (live code)
 
 ```
@@ -144,6 +260,11 @@ main.py
 ---
 
 ## 3. MODULE MAP
+
+Sections 3a-3c below map the scientific core. 3d and 3e map the project/service
+layer and the desktop renderer.
+
+### 3a-3c. The scientific core
 
 **No circular imports.** The live dependency graph is a DAG: `constants` and `models` are leaves; `pipeline` is the only node touching every branch; `gui` sits above `pipeline` and `viewer`. Verified by collecting every `import`/`from` line in the project (excluding `.venv`).
 
@@ -259,6 +380,56 @@ Imports: `tkinter`, `tkinter.font`, `collections.abc.Mapping`, `PIL.{Image, Imag
 Imports: `tkinter`, `tkinter.font`, `constants.COLORS`. **Imported by: nothing.**
 
 ---
+
+### 3d. The project and service layers
+
+`service/handlers.py` merges `PROJECT_METHODS` into one `METHODS` table, so the
+frontend has a single request channel. The 28 project methods:
+
+| Group | Methods |
+|---|---|
+| Lifecycle | `project.create`, `project.open`, `project.close`, `project.setTitle` |
+| Sources | `project.refreshSources`, `project.validateFastaCandidate`, `project.linkFasta`, `project.unlinkFasta`, `project.setFastaFileLocked`, `project.relinkFasta`, `project.reindexFasta` |
+| Search | `project.searchHeaders` (capped preview), `project.resolveFocalAddQuery` (uncapped, what `+` uses), `project.matchFocalHeaders` (what `-` uses) |
+| Focal sets | `project.listFocalSets`, `project.getFocalSet`, `project.createFocalSet`, `project.renameFocalSet`, `project.setFocalSetLocked`, `project.deleteFocalSet`, `project.replaceFocalEntries`, `project.saveFocalSet`, `project.addFocalEntries`, `project.removeFocalEntries` |
+| Presence | `project.headerPresence`, `project.focalPresence` |
+| Run | `project.runMolecularDiagnosis` |
+
+Rules that live in Python rather than in disabled buttons:
+
+- A locked focal set may be selected, presence-checked and analysed; every
+  mutation is refused with `FOCAL_SET_LOCKED`.
+- A locked FASTA source stays fully analysable; unlinking and renaming it are
+  refused. Locking protects the LINK, not the file.
+- `project.searchHeaders` is a capped preview and `+` must not truncate a focal
+  set, so `+` resolves through `project.resolveFocalAddQuery` instead.
+- A `+` whose scope contains a file that could not be searched is refused
+  outright (`SEARCH_SCOPE_UNAVAILABLE`) rather than persisting half an
+  expansion.
+- `project.replaceFocalEntries` applies the big textbox as a DIFF, so surviving
+  entries keep their ids and cached locations, and a header that matches no
+  FASTA is KEPT so it can show red.
+
+### 3e. The desktop renderer
+
+    open/create project -> linked FASTA sources -> selected FASTA scope
+      -> working focal-set draft -> saved persistent focal set
+      -> project.runMolecularDiagnosis
+
+- `projectState.ts` is the only reducer. Screens dispatch into it; no screen
+  holds its own copy of project data.
+- `focalDrafts.ts` holds `persistedId`, the saved title/headers, the working
+  title/headers, `locked`, the undo history and `burstOpen`. `dirty` is DERIVED
+  by comparing normalised working values against saved ones, never stored.
+- `sourceStatus.ts` keeps `available`, `indexUsable` and `activity` apart -
+  conflating them is what produces a UI that lies.
+- `runGate.ts` answers one question, "may this run start", with a reason.
+- `typingBurst.ts` closes a manual typing burst after ~700ms idle so one Undo
+  cannot swallow an entire editing session. It closes the history group only and
+  never rewrites the document.
+- `uiScale.ts` keeps `--ui-zoom` in step with the window so the 1920x1080 design
+  frame survives 125% Windows scaling.
+
 
 ## 4. THE SCIENTIFIC CORE
 
@@ -463,7 +634,11 @@ This differs from the legacy `cluster_sequences` (`consensus_dmc_pipeline.py:191
 
 ---
 
-## 5. UI LAYER
+## 5. UI LAYER (1) - the legacy Tkinter app
+
+This section describes `gui.py` and `viewer.py`, which are the LEGACY UI. They
+still run, and the analysis below is still accurate for them. The current UI is
+section 5b.
 
 ### Which files are tkinter
 
@@ -611,6 +786,73 @@ Costs that remain: a full-viewport `Image.new` + `PhotoImage` allocation on **ev
 
 ---
 
+## 5b. UI LAYER (2) - the Electron/React desktop app
+
+The current UI. No Python is imported by the renderer, no SQL exists anywhere in
+`desktop/`, and the Electron main process holds no project state - it forwards.
+
+### Process boundaries
+
+    renderer (React)  ->  window.desktop.*  (preload, contextIsolated)
+                      ->  ipcRenderer/ipcMain  (main.ts)
+                      ->  pythonBridge  (newline-delimited JSON over stdio)
+                      ->  python -m molecular_diagnosis.service
+
+stdout is protocol-only; the service redirects its own `sys.stdout` to stderr,
+and the bridge attaches captured stderr to failures as diagnostics.
+
+### Screens
+
+| Screen | File | Notes |
+|---|---|---|
+| Launcher | `screens/LauncherScreen.tsx` | Create New / Open Existing, plus Recents and Browse. Recents needs a store nothing writes yet, and says so. |
+| Project page | `screens/ProjectScreen.tsx` | ONE screen for both project states. Before Create the title field carries a Create button and the FASTA rows are vetted CANDIDATES; after Create the title becomes a heading with a rename pencil, SELECT ANALYSES appears, and the SAME table starts linking into the project. No navigation happens on Create. |
+| Molecular Diagnosis | `screens/MolecularDiagnosisScreen.tsx` | Design pages 4 and 6. A never-saved set shows the labelled title input; a saved one shows the heading with SAVE. Same component. |
+
+### The FASTA table
+
+`components/sources/SourceTable.tsx` renders one `SourceRow` for both kinds of
+row. A candidate has no `fastaFileId`, so its lock is held locally by path in
+`pending.lockedPaths` and applied through `project.setFastaFileLocked` as soon
+as Create links the file. Everything else about the row - the name and pencil
+inline group, the seq/bp/PIS columns with first-row-only unit labels, the hover
+reveal, the in-row removal confirmation - is identical either side of Create.
+
+Deferred and drawn as inert rather than faked: source rename, source reordering,
+and PIS (shown as an em dash because nothing computes it).
+
+### The focal set
+
+- `components/focal/FocalSetEditor.tsx` - CodeMirror 6 (`@codemirror/state` +
+  `@codemirror/view`, no language modes, no history extension). Entries are
+  complete exact headers separated by `;`. Manual editing never expands a
+  substring; `+` is the thing that searches. Undo/redo belong to the DRAFT, so
+  one stack covers typing, `+` and `-`.
+- `components/focal/FocalSetLibrary.tsx` - lists WORKING DRAFTS, not database
+  rows, so a set the user started is visible before it is saved. Every row
+  follows one control rule: hidden at rest, grey on row hover, lit under the
+  pointer, and a locked row keeps its lock and loses rename and delete.
+
+### The right-hand column
+
+`components/alignment/WorkspaceRightPane.tsx` renders the display selectors, the
+optional focal-set library, and the visualizer shell as ONE flex column
+overlaying the analysis controls. The viewer is the item after the pane, so its
+top follows the library's real height; its left edge is a margin percentage
+driven by the drag snaps. There is exactly one left rail, and that rail is the
+drag handle. `components/alignment/AlignmentPlaceholder.tsx` draws only what is
+inside the frame - there is no sequence renderer yet, deliberately.
+
+### Scaling for Windows DPI
+
+`app/uiScale.ts` sets `--ui-zoom` to `min(1, innerWidth / 1920)`, and
+`global.css` applies it to `#root` with a compensating width/height. At 1920 CSS
+px it is exactly 1 and the reference layout is untouched; at the 1536x864
+viewport a 1920x1080 screen reports at 125% scaling it is 0.8, which reproduces
+the reference layout at the same physical size instead of reflowing it into a
+second design nobody drew.
+
+
 ## 6. UI/LOGIC ENTANGLEMENT
 
 The list to work from when extracting the core. Ordered roughly by how much it will get in the way.
@@ -702,28 +944,54 @@ The punishment run takes **no** tunables at all: `run_punishment_core` (`pipelin
 
 ## 9. TESTS AND DATA
 
-### Tests
+### Python: 288 tests, all passing
 
-19 tests across three files, all collected under `pyproject.toml`'s `testpaths = ["tests"]`.
+Collected under `pyproject.toml`'s `testpaths = ["tests"]`.
 
-| File | Count | Covers |
+| File | Tests | Covers |
 |---|---|---|
-| `tests/test_core.py` | 9 | `extract_sites`, `score_state` (exact / ambiguous / no-match), `compute_similarity`, `compute_match_score`, `find_dmc_information`, `format_diag` (populated / empty) |
-| `tests/test_fasta_io.py` | 8 | `parse_fasta` (simple, multiline), `validate_aligned_fasta` (returns length, rejects empty, rejects unequal), `split_focal_headers` (normal, no-focal, no-non-focal) |
-| `tests/test_pipeline.py` | 2 | `run_pipeline_core` writes both outputs; `next_available_filename` produces `(2)` names |
+| `tests/test_core.py` | 10 | `extract_sites`, `score_state`, `compute_similarity`, `compute_match_score`, `find_dmc_information`, `format_diag`. |
+| `tests/test_fasta_io.py` | 8 | Parsing, aligned-length validation, header splitting. |
+| `tests/test_focal.py` | 29 | The single focal matcher: substring containment, OR across selectors, trimming, deduplication, refusal of an empty selector. |
+| `tests/test_pipeline.py` | 2 | `run_pipeline_core` writes both outputs; `next_available_filename` produces `(2)` names. |
+| `tests/test_parity.py` | 13 | Runs `tests/parity_driver.py` against the current tree and against a read-only worktree of the pre-integration commit, and diffs the results: focal selection, every `DMCResult` field, five-site optimisation, consensus, both text reports, the logical contents of `comparison_output.xlsx`, and continuation/resume. Two of them drive `service.dispatch` - the route Electron actually takes. |
+| `tests/test_project_db.py` | 21 | Schema creation, the migration ladder, `user_version`. |
+| `tests/test_project_sources.py` | 45 | Linking, the six source states, re-indexing, relinking, duplicate-header refusal. |
+| `tests/test_project_sources_lock.py` | 19 | The persisted per-source lock: it is stored, it survives reopening, it refuses unlinking, and it does NOT make a file unanalysable. |
+| `tests/test_project_focal_api.py` | 33 | Focal sets: create, rename, lock, delete, entry replacement as a diff. |
+| `tests/test_project_draft_api.py` | 29 | `saveFocalSet`, presence, `resolveFocalAddQuery`, `matchFocalHeaders` - the calls the working-draft UI is built on. |
+| `tests/test_project_rpc.py` | 41 | The `project.*` methods through `dispatch`, including refusals and their codes. |
+| `tests/test_service.py` | 32 | Protocol framing, error mapping, and a real stdio subprocess proving stdout stays protocol-only. |
 
-**`tests/test_core.py::test_find_dmc_information` currently fails.** I called `find_dmc_information` directly with the test's exact input rather than running pytest, and got:
+`tests/parity_driver.py` (233 lines) is a helper, not a test file.
 
-```
-fixed_count 4          (test expects 4  — OK)
-candidate_count 4      (test expects 4  — OK)
-single [1, 3]          (test expects [1,3] — OK)
-pairs_tested 0         (test expects 6  — FAILS)
-stop_reason  found_at_or_above_minimum_length, stopped_at_length 1
-```
-Cause: the assertion at `tests/test_core.py:48` predates the min/max search rework. With defaults the search now stops at length 1 because single-site DMCs were found, so no pairs are ever enumerated (§4.4). `core.py` last changed in `b46f9a9` (2026-05-11); `tests/test_core.py` last changed in `6780870` (2026-04-29). `.pytest_cache/v/cache/lastfailed` is `{}`, and `.pytest_cache/` was last written 2026-04-29 — i.e. the last recorded green run predates the change. (I did not run pytest, to avoid writing to `.pytest_cache`; re-running the suite would confirm.)
+**The formerly failing test is fixed.** Earlier revisions of this map recorded
+`tests/test_core.py::test_find_dmc_information` failing because its assertion
+predated the min/max search rework. The suite is green: 288 passed.
 
-**Not covered by any test:** `punishments.py` (0 tests), `consensus.py` (0), `sequence_subsets.py` (0), `excel.py` (0), `reports.py` (0), `utils.next_available_filename` (only indirectly, via `test_pipeline`), `find_best_five_site_sets` (0), all of `core.py`'s column predicates and `consensus_base_for_column` (0), both option flags (0), `run_punishment_core` (0), and both viewers (0). No test asserts on the *content* of any output file — only that paths exist and are named correctly.
+Still not covered by any Python test: `punishments.py`, `sequence_subsets.py`,
+`excel.py` and `reports.py` beyond what parity exercises, and both Tkinter
+viewers.
+
+### Desktop: 230 tests, all passing
+
+`npm test` in `desktop/` (Vitest, jsdom). `vitest.setup.ts` stubs the two
+`Range` geometry methods CodeMirror calls, because jsdom has no layout engine.
+
+| File | Tests | Covers |
+|---|---|---|
+| `src/app/state/focalEditing.test.ts` | 55 | The reducer: working copies, dirty derivation, undo/redo, lock refusals, scope reconciliation. |
+| `src/components/focal/focalMatching.test.ts` | 29 | The frontend matcher modes. |
+| `src/app/state/sourceStatus.test.ts` | 18 | The six source states, their tone, and what each offers. |
+| `src/components/focal/FocalSetLibrary.test.tsx` | 18 | The library through the real workspace, plus row-control structure and the right-hand column's order and single rail. |
+| `src/app/projectScreen.test.tsx` | 17 | One screen before and after Create, candidate vetting, the per-source lock including the PENDING lock and its carry-over through Create. |
+| `src/app/projectFlow.test.tsx` | 17 | Launcher to run: no writes while editing, Run refused until saved, and the 700ms typing-burst wiring. |
+| `src/app/focalScopes.test.tsx` | 17 | The three scopes kept distinct: run, `+` search, presence comparison. |
+| `src/app/state/runGate.test.ts` | 17 | Every reason a run may be refused. |
+| `src/components/focal/focalText.test.ts` | 15 | Tokenising and serialising the `;`-separated document. |
+| `src/backend/backendContract.test.ts` | 12 | The shapes that cross the process boundary. |
+| `src/app/state/typingBurst.test.tsx` | 9 | Fake-timer proof of undo granularity: rapid typing is one step, a pause starts another, one Undo takes back only the most recent burst, and the timer never rewrites the document. |
+| `src/app/uiScale.test.ts` | 6 | 1 at 1920, 0.8 at 1536, never magnifying, and a floor. |
 
 ### Sample / test FASTA files
 
@@ -749,7 +1017,7 @@ Measured column statistics on the real file with the focal string `Leptacis_tipu
 The five things most likely to break during a refactor.
 
 ### 1. The stop-at-first-productive-length semantics, and `min_combination_length`'s counter-intuitive role
-`core.py:358-382`. The loop starts at `start_combination_length` (not `min`), and `min` only gates the early `break`. It is very easy to "clean this up" into a loop that starts at `min` — which would silently change which combinations are found, empty `dmc.pairs` in different circumstances, change `dmc.unique`, and therefore change the 5-site results and the whole Excel workbook. The currently-failing test (§9) is exactly this behaviour changing once already.
+`core.py:358-382`. The loop starts at `start_combination_length` (not `min`), and `min` only gates the early `break`. It is very easy to "clean this up" into a loop that starts at `min` — which would silently change which combinations are found, empty `dmc.pairs` in different circumstances, change `dmc.unique`, and therefore change the 5-site results and the whole Excel workbook. A test asserting `pairs_tested == 6` was invalidated by exactly this behaviour changing once already; `tests/test_core.py:50` now pins BOTH sides of it, the early stop and the case that does enumerate pairs.
 **Accidental-but-load-bearing:** `stop_reason` is initialised to `"reached_maximum_length"` at `core.py:346` and only overwritten on the early break. The GUI's entire continue-prompt (`gui.py:175`) hangs off that initial value. Any change to how `stop_reason` is assigned changes the interactive workflow, not just a report string.
 
 ### 2. The empty-state-never-matches rule
@@ -785,7 +1053,7 @@ Two independent traps in the same area:
 
 1. **`min_combination_length`** — is the current behaviour (searches from length 1 regardless; `min` only permits early stopping) what you intended, or did you mean "do not bother testing combinations shorter than N"? These give different results whenever a shorter DMC exists. This is the single most consequential ambiguity in the map.
 
-2. **`tests/test_core.py::test_find_dmc_information`** — the `pairs_tested == 6` assertion is now wrong given the early-stop behaviour (§9). Is the *test* stale, or did the early stop change something you did not intend?
+2. ~~`tests/test_core.py::test_find_dmc_information` asserts `pairs_tested == 6`, which the early-stop behaviour invalidated.~~ **Answered and fixed:** the test was stale. `tests/test_core.py:50` now asserts the early stop explicitly and a second case covers the pair enumeration.
 
 3. **INS scoring** — `score = float(b_any)` with no weight constant (`punishments.py:359`), while PRL/POLY/BAL all have one. Deliberate (insertions should dominate), or an unfinished spot where an `INSERTION_WEIGHT` was meant to go?
 
@@ -889,7 +1157,7 @@ Why high-risk untested: this one file transitively pins the candidate filter, th
 **2. Parametrised table test of `find_dmc_information` search semantics.**
 Pin: `single`, `pairs`, `unique`, `stop_reason`, `stopped_at_length`, and `combinations_tested_by_length` across the grid of `(min, max, start)` combinations — specifically `(1,2,1)`, `(2,3,1)`, `(3,5,1)`, and a resume case with `start=3` plus `initial_diagnostic_combinations`.
 Input needed: two tiny hand-built dicts — one where a 1-site DMC exists (so the early break fires) and one where the shortest DMC is 3 sites (so it does not).
-Why high-risk untested: this is risk 1. The only existing test of this function asserts a value that is already wrong (§9), so there is currently *negative* coverage here. Include the "min=3 still searches lengths 1 and 2" case explicitly — that is the behaviour most likely to be silently "corrected".
+Why high-risk untested: this is risk 1. `tests/test_core.py:50` now covers the early stop, and `tests/test_parity.py::test_parity_non_default_min_and_max` covers the min/max interaction against the pre-integration baseline. Include the "min=3 still searches lengths 1 and 2" case explicitly — that is the behaviour most likely to be silently "corrected".
 
 **3. Gap and ambiguity truth table for the two option flags.**
 Pin: for a purpose-built alignment, the exact `candidate_count`, `skipped_non_acgt`, `globally_conserved_removed`, `ambiguous_bd_sites_included` and `gappy_consensus_sites_included` under all four combinations of `include_ambiguous_dmc_bd` × `include_gappy_consensus_dmc_sites`.

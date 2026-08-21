@@ -9,10 +9,12 @@ than hidden behind a plausible-looking implementation.
 Scope: the UI **and** its integration with the Python backend. Molecular
 Diagnosis now runs end to end through a child-process service; see §13.
 
-Reference material: `docs/02-project-creation.svg` (newest, authoritative for
-the project-creation screen), plus `docs/01-launcher.png`,
-`docs/02-project-creation.png`, `docs/03-molecular-diagnosis.png`. Behavioural
-reference for the existing Python: `REPO_MAP.md` at the repo root.
+Reference material: **`docs/new/all_pages-20Aug2026.svg` is authoritative** -
+page 1 launcher, page 2 new project, page 3 project / FASTA list, page 4 a new
+focal set, page 6 a saved focal set with the library. `docs/legacy/` (the three
+PNGs, `02-project-creation.svg`, `all_pages.svg`) is HISTORY and must not drive
+new work; sections written before pass 8 cite those paths and are left as
+written. Behavioural reference for the Python: `REPO_MAP.md` at the repo root.
 
 > **Pass 2 (interaction semantics)** reworked navigation gating, focal-set
 > editing, the DNC steppers, tooltip stacking, and replaced every hand-drawn
@@ -21,6 +23,9 @@ reference for the existing Python: `REPO_MAP.md` at the repo root.
 > **Pass 3 (backend integration)** wired the frontend to Python over a
 > child-process JSON service. Several pass-1 and pass-2 notes are now
 > superseded — §13 is authoritative where they disagree.
+>
+> **Pass 10 (interaction corrections)** is §19. Where it disagrees with any
+> earlier section, §19 is what the code does.
 
 ---
 
@@ -706,3 +711,413 @@ silently discard sequences — the file stays linked and searchable),
 expansion). Plain search does NOT refuse: it returns its hits plus an
 `unavailable` list of the files it could not read, and the UI must show that
 before the user treats the hit list as complete.
+
+## 17. Screens 1–3 on the new design, and the project-backed workspace (pass 8)
+
+The authoritative design is now `docs/new/all_pages-20Aug2026.svg`. `docs/legacy/`
+is history and must not drive new work. Screens 1–3 (launcher, new project,
+project page) are implemented from the new file; the Molecular Diagnosis screen
+keeps its current layout but has been moved onto the persistent project, so the
+next pass is predominantly visual.
+
+### One architecture, end to end
+
+    open/create project -> linked FASTA sources -> selected FASTA scope
+      -> working focal-set draft -> saved persistent focal set
+      -> project.runMolecularDiagnosis
+
+Nothing in the workspace reads `draft.fastaPath` any more, and neither
+`analysis.validateFocalStrings` nor `analysis.runMolecularDiagnosis` is reachable
+from it. Those preload methods still exist for the non-project entry points.
+
+### Saved data vs working copy
+
+A focal set in the database is a scientific commitment: it names the sequences a
+run will treat as focal, and a run's report names the set. So editing does not
+write. `FocalDraft` (app/state/focalDrafts.ts) holds `persistedId`, the saved
+title/headers, the working title/headers, `locked` and the undo history;
+`dirty` is DERIVED by comparing normalised working values against saved ones,
+never stored.
+
+Consequences the UI must keep:
+
+* `project.saveFocalSet` is the only write ordinary editing performs.
+* Switching drafts does not save the one being left.
+* Run is refused while a draft is new or dirty, and never auto-saves. The
+  reason is stated on the button, not left to be discovered.
+* A locked set is read-only in the reducer AND in Python, and stays selectable
+  and runnable.
+
+### `+`, `−` and presence all run in Python
+
+`+` is `project.searchHeaders` over the current scope, and refuses outright if a
+file in that scope could not be searched — a partial expansion looks complete
+and is not reproducible. `−` is `project.matchFocalHeaders` against the WORKING
+copy; it never searches the FASTA, and it lives in Python because
+`str.casefold()` is not `String.prototype.toLowerCase()` and two
+implementations of "the same" rule would eventually disagree.
+
+Colours come from `project.headerPresence`, which answers from the header index
+with one batched lookup. It opens no file, hashes nothing, reindexes nothing and
+persists nothing, so typing costs no filesystem work. The renderer debounces it
+(~300 ms) and tags each request with a generation, dropping stale answers.
+Presence is keyed BY HEADER, so reordering entries cannot mis-colour them.
+
+Four states, not two: green (in the selected scope), orange (in the project but
+not in the SELECTED file), red (in none of them), and a dotted-underlined grey
+for `unknown` — "could not check" and "is not there" send the user to different
+problems.
+
+### FASTA pool
+
+`FastaScope` is either one file or All files, defaulting to the first linked
+file. It drives BOTH the presence colours and the files a run reads, so the two
+can never describe different scopes. A single file runs with
+`singleFile: true`; All files passes every linked id with `singleFile: false`.
+
+### Screens
+
+* **Launcher** — Create New / Open Existing, plus Recents and Browse. Browse is
+  the folder picker; Recents needs a store of previously opened directories that
+  nothing writes yet, and says so.
+* **New project** — title and chosen FASTA paths are LOCAL; there is no database
+  to write to yet. Create requires a title, picks a directory, calls
+  `project.create`, then links each FASTA. A file that fails to link is reported
+  and skipped: the project that was just created is not torn down over one bad
+  input.
+* **Project page** — persistent title with a pencil (`project.setTitle`), Browse
+  for multi-file linking, the linked-file rows from `page2-b`, and the analysis
+  checkboxes. Selected analyses are the tabs, so the temporary Continue button is
+  gone. Home returns here.
+
+Deliberately deferred, and drawn as disabled rather than faked: source rename,
+source lock, and drag reordering. PIS is shown as `—` because nothing computes
+it — a 0 would be a claim. Analysis selection is session-local; the schema has
+nowhere to put it and a migration for a checkbox would be the wrong trade.
+
+
+## 18. Screens 4 and 6: the editing workspace (pass 9)
+
+### Three scopes, deliberately distinct
+
+There are three, and conflating any two produces a specific bug:
+
+| scope | what it decides | follows |
+|---|---|---|
+| run | which files an analysis reads | the FASTA pool |
+| `+` search | which files a query searches | the FASTA pool |
+| presence comparison | which files a header is compared against | ALWAYS every linked file |
+
+With one FASTA selected, `+` searches only that file — so a header it adds is
+normally green, and `+` is NOT widened to the whole project just to make orange
+possible. Orange comes from the comparison scope: a header typed by hand (or
+inherited from another selection) that is absent from the selected file but
+present elsewhere in the project reads orange, not red. Changing the selection
+re-colours the existing entries accordingly.
+
+Under **All files** the run, search and comparison scopes coincide and there is
+no "outside the selected file", so `present_other` cannot occur and orange never
+appears.
+
+### `+` must never truncate
+
+`project.searchHeaders` is a CAPPED preview. Expanding `+` through it silently
+produced a smaller focal set than the user asked for. `+` now resolves through
+`project.resolveFocalAddQuery`: same substring rule, same ordering, same scope
+verification, no limit, no write. The capped preview stays for listing UI.
+
+### The run gate lives in the handler
+
+`runDiagnosis` re-checks `runGate.canRun` before calling the backend and
+surfaces its reason. A disabled button is a hint; the guarantee has to survive a
+keyboard path or a stale render.
+
+### The focal field is a real editor
+
+CodeMirror 6 (`@codemirror/state` + `@codemirror/view`, no language modes, no
+history extension). Per-token colour on top of genuinely editable text needs
+correct caret, selection, IME, clipboard and undo behaviour; hand-rolling that
+on `contenteditable` is the class of bug that never finishes.
+
+* entries are complete exact headers separated by `;`
+* whitespace around a separator is dropped, whitespace INSIDE an entry is kept
+* blanks vanish, duplicates collapse to the first occurrence (repeats are shown
+  struck through — the text is real, the second membership is not)
+* manual editing NEVER expands a substring; `+` is the thing that searches
+* the document is the source of truth while typing, and an incoming array only
+  replaces it when it expresses different membership, so the caret is never
+  yanked mid-entry
+
+Undo/redo belong to the DRAFT, not to the editor: CodeMirror's own history is
+absent and `Mod-Z` is swallowed, so one stack covers manual typing, `+` and `−`.
+A continuous typing burst coalesces into ONE step (`coalesce` on
+`setDraftHeaders`, closed by blur, by `+`/`−`, by undo/redo and by switching
+drafts). `+` and `−` are one step each.
+
+### Focal set library
+
+Lists WORKING DRAFTS, not database rows, so a set the user started is visible
+before it is saved. Rows show `[n=x]` from the working membership. An inactive
+dirty draft carries the pink asterisk; the active one does not, because the Save
+control beside its title already says so.
+
+* selecting a row never saves the row being left
+* the pencil selects the draft and focuses its title; the rename is local until
+  Save, like any other working-copy edit
+* locking requires a SAVED, CLEAN draft — locking a dirty one would either lock
+  the stale saved copy or auto-save a version the user never approved, so it is
+  refused with an explanation instead
+* a locked row keeps its lock and loses rename/delete, and stays selectable and
+  runnable
+* deleting is confirmed; a saved set goes through `project.deleteFocalSet`, a
+  never-saved draft is dropped locally, and a dirty saved set says explicitly
+  that the unsaved edits go too
+* after a deletion a neighbour is selected; if nothing remains, one blank LOCAL
+  draft appears and no database row is created for it
+
+**Affordance gap.** The design shows no dedicated "create another focal set"
+control. Rather than invent a panel, the capability is a modest `+ New focal
+set` action in the library footer. If the intended affordance is something else,
+this is the one place to change.
+
+### Sequence visualizer — shell only
+
+No transport, no renderer; the interior is the existing placeholder. What is
+implemented is the layout contract:
+
+* the pane OVERLAYS the analysis column (absolute, not a flex sibling), so
+  dragging it never reflows or squeezes the controls underneath — verified: the
+  analysis column stays 1049px wide at every snap
+* the left edge is a drag handle moving between four snaps (34%, 54.6% default,
+  70%, 85%) rather than to an arbitrary pixel, so it cannot be parked half
+  across something; the handle is fully on screen at both extremes
+* double-clicking the handle resets to the design's default; arrow keys and Home
+  do the same from the keyboard
+* showing the library takes VERTICAL space only — the frame's top edge drops
+  from y187 to y349 and its width stays 850px
+
+Tooltips portal to `<body>` at `z-index: 100` against the viewer's `2`, so they
+render over it; and the analysis column takes `pointer-events: none` while a
+drag is in progress, so sweeping the pointer across it cannot pop tooltips.
+
+### Still drawn but not wired
+
+The Search row under the focal box is present and disabled — a field that looks
+live and does nothing is worse than one that says it is not ready. "Estimated
+run time" shows an em dash for the same reason.
+
+
+## 19. Interaction corrections (pass 10)
+
+No redesign. Seven specific behaviours were wrong or inconsistent against
+`docs/new/all_pages-20Aug2026.svg` and against each other; this pass fixed them
+and left everything else alone.
+
+### The project page behaves the same before and after Create
+
+There was already one `ProjectScreen` and one `SourceTable`. What was still
+different was the ROW: a candidate could not be locked, because a candidate has
+no `fastaFileId` and the lock is a backend call.
+
+**Pending source lock.** `pending.lockedPaths` holds the paths the user locked
+before the project existed - by path, because that is the only identity a
+candidate has. The row reads its lock from there and calls
+`setPendingCandidateLocked`; a linked row calls `project.setFastaFileLocked`
+exactly as before. One `SourceRow`, one lock control, one set of states:
+
+* locking a pending row keeps the lock visible,
+* the pencil and the delete disappear while it is locked,
+* unlocking restores them,
+* hover behaves identically to a linked row.
+
+**Carry-over.** `linkCandidates(candidates, lockedPaths)` links each file and
+then, for a file that was locked, immediately calls `project.setFastaFileLocked`
+with the id the link produced. So the local intent becomes the persisted lock as
+soon as there is a row to lock, and the row transitions pending to linked without
+changing what it offers. Tested in `projectScreen.test.tsx`, including the
+ordering (`linkFasta` before `setFastaFileLocked`) and the case where nothing was
+locked.
+
+A candidate lock is deliberately NOT persisted anywhere else. If the user never
+creates the project, it was a decision about a row that never existed.
+
+### Source rows: the pencil, and the help dots
+
+**The pencil belongs to the name.** It used to occupy its own grid column, which
+put it hundreds of pixels right of a short file name. Name and pencil are now one
+inline group (`.source-row__name-group`) sharing the `1fr` track: the name is a
+flex item sized to its content, so the pencil starts where the rendered text
+ends, and a long name ellipsises with the pencil still against it. The group's
+track ends before the seq column, so neither can collide with the metrics.
+
+**The help dots on a row are a different treatment.** The standard dot is a
+`--c-surface` disc, which is exactly the FASTA row's own background - so on a row
+it vanished. Page 3 draws those dots the other way round, sampled from the SVG:
+a `#525f72` (`--c-bg`) disc with a `#7f92ae` (`--c-muted`) question mark.
+`HelpButton` takes `variant="on-row"` for that, rather than every dot in the app
+being changed to suit one context.
+
+**Row control rules**, identical for pending and linked rows:
+
+| State | Appearance |
+|---|---|
+| unlocked, not hovered | no controls |
+| row hovered | controls appear muted grey |
+| pencil / lock hovered | white |
+| delete hovered | red |
+| locked | lock only, grey, visible without hover |
+| locked, lock hovered | white |
+
+The rename pencil takes the white hover even though renaming is not implemented:
+it is part of the row's hover language. It keeps `cursor: default` and a tooltip
+that says renaming is not available yet, so it never claims to work.
+
+### Focal library rows: one rule for every row
+
+The active row used to carry `.focal-row.is-active .focal-row__icon { opacity: 1;
+color: muted }`. Three classes beat `.focal-row__icon:hover`'s two, so the active
+row's controls were always visible and could never light up under the pointer.
+The fix is the deletion of that rule, not another override on top of it: every
+row now follows one set - hidden at rest, grey on row hover, white for
+pencil/lock, red for delete, and a locked row keeps its lock (grey at rest, white
+on hover) whether or not the row is hovered.
+
+The pencil moved into a name group here too, for the same reason and with the
+same shape. The select button and the pencil are SIBLINGS inside that group,
+never nested: a button inside a button is invalid and unpredictable for assistive
+tech. Row selection, the active arrow, the dirty asterisk, `[n=x]` and the
+accessible names are unchanged.
+
+### The upper focal controls
+
+* **Title to STRING spacing.** Measured on screens 4 and 6: both draw a 33px
+  title row whose top is 53px above the STRING row's top - a 20px gap. The saved
+  title state was leaving 6px (a `min-height` plus a 6px margin), which is why it
+  read as cramped while the input state did not. Both states now take the gap
+  from one declaration, so they cannot drift apart again. The parameter block
+  below is untouched.
+* **The title help dot is gone.** "FOCAL SET TITLE" is a name for a focal set;
+  a tooltip explaining that is noise. `HELP_TEXT.focalSetTitle` was removed with
+  it rather than left as dead copy.
+* **The STRING help dot** sat on top of the Enter chip. The chip overhangs the
+  field wrapper it belongs to, so the flex line measured short and the dot landed
+  on it - and widening the gap only squeezed Enter instead. The dot is now placed
+  at a measured x (`1011px + 6px`), out of the flex line: Enter keeps its measured
+  914..1011 and the dot ends at 1047, one pixel before the viewer's rail at 1048.
+  The analysis column's right inset became `padding` instead of a transparent
+  border so the dot is not clipped, and its scrollbar is inset by a transparent
+  border on the scrollbar parts instead. STRING behaviour is unchanged.
+
+### The library decides where the viewer starts
+
+The viewer's top used to be one of two constants (73 without the library, 302
+with it), so a library of two rows pushed it as far down as a library of eight
+would and the band between stayed permanently empty.
+
+The selectors, the library and the viewer are now ONE flex column
+(`.workspace-right`) overlaying the analysis controls. The viewer is the item
+after the pane, with a 16px top margin - the design's own gap between the
+selectors (ending y=167) and the frame (starting y=183). So:
+
+* one or two focal sets and the viewer starts high;
+* more sets and it moves down as the list grows;
+* at `--h-library-max` the list scrolls internally and the viewer stops
+  descending;
+* nothing reserves space for a library larger than the one on screen.
+
+No ResizeObserver and no measured pixel value: the layout does it, which also
+means it cannot disagree with the zoom in §19's scaling section. Horizontal
+independence is unchanged - the pane is right-anchored at its own width and the
+viewer's left edge is a margin percentage.
+
+### One left rail
+
+The workspace had two left-edge elements: a `viewer__edge` drag handle and the
+placeholder's own `alignment__rail`, drawn side by side, so there were two thin
+edges where the reference has one. The rail now belongs to the viewer
+(`viewer__rail`), is the drag target over its whole height, keeps the darker
+thumb, and the placeholder draws only what is inside the frame. The stage begins
+at the rail's right edge with no gap.
+
+Everything the handle did, the rail does: drag to resize, release snaps,
+double-click resets to the design default, arrow keys and Home from the keyboard,
+the full-expansion snap reaching the workspace's left boundary, tooltips
+suppressed while dragging, and no reflow of the analysis column.
+
+### Undo grouping: a 700ms idle timer
+
+A burst used to stay open until a focus or action boundary, so a user who typed
+for two minutes without leaving the field lost all of it to one Undo.
+
+`app/state/typingBurst.ts` closes the burst after ~700ms without a document
+change. Every change restarts the countdown, so a burst never expires mid-flow.
+Boundaries still close it explicitly and immediately: blur, `+`, `-`, Save,
+switching focal sets, undo/redo, and any programmatic canonical replacement.
+
+**The idle timer does not canonicalise.** It closes the history group and
+nothing else. A user who pauses halfway through typing a header must not have
+their unfinished text rewritten; blur and Save keep their existing
+canonicalisation boundaries. Timers are cleared on unmount and when the active
+draft changes, and the payload travels through the timer so the burst that ends
+is the one that was typed in.
+
+Fake-timer tests in `state/typingBurst.test.tsx` cover rapid typing as one step,
+a pause starting a new step, one Undo removing only the most recent burst, and
+the absence of one-step-per-keystroke; `projectFlow.test.tsx` proves the wiring
+through the real CodeMirror editor.
+
+### 125% Windows scaling
+
+**The authoritative appearance is still 1920x1080 at 100%.** Nothing about the
+reference layout was changed to accommodate a smaller viewport.
+
+At 125% Windows scaling the SAME physical screen reports a 1536x864 CSS
+viewport - exactly 0.8 of the design in both axes. The window did not get
+narrower; the pixels got bigger. Reflowing for that would produce a second design
+nobody drew, and the 1920 frame would then have to be maintained against it.
+
+So `app/uiScale.ts` keeps `--ui-zoom` at `min(1, innerWidth / 1920)` and
+`global.css` applies it to `#root` with a compensating `width`/`height`, using
+`zoom` rather than `transform: scale()` because zoom participates in layout -
+viewport units, fixed positioning, scrolling and hit testing all follow it.
+
+* At 1920 the factor is exactly 1 and nothing is touched.
+* At 1536 it is 0.8, so the renderer lays out at 1920x1080 and paints into
+  1536x864 - which on a 125% display is the same physical size as the reference
+  at 100%. Text included: 27px at 0.8 zoom on a 1.25 device ratio is 27
+  device-independent pixels again.
+* It never magnifies a wider window, and it stops at a 0.55 floor.
+* **The launcher is excluded.** It has its own 540x340 window sized to its own
+  540x289 design, so measuring it against the workspace frame would read a small
+  window as a scaled-down large one and shrink it to a third of its size.
+  `useWorkspaceZoom(state.screen !== 'launcher')`.
+* Height is deliberately not part of the factor. A short window is a different
+  problem, and the analysis column already scrolls internally; scaling for height
+  would shrink a layout with no horizontal problem and leave a wide empty margin
+  down the right.
+
+Two consequences worth knowing:
+
+* Pointer deltas are in painted pixels while CSS lengths are in layout pixels.
+  The focal box's resize grip divides by `currentZoom()` for that reason. The
+  viewer's drag works in ratios, so it needs no correction.
+* Tooltips portal to `<body>`, outside the zoomed root, so they render at 100%
+  over a scaled app. They are overlays and stay readable; positioning is
+  unaffected because it comes from `getBoundingClientRect`, which is already in
+  painted coordinates.
+
+### How the visual states were checked
+
+The preview pane used for screenshots does not deliver pointer hover to the
+page, so hover states cannot be photographed by moving a cursor. They were
+verified by rewriting every `:hover` selector in the loaded stylesheets IN PLACE
+to a class and applying that class: a pseudo-class and a class have the same
+specificity and the rule keeps its position in the sheet, so the cascade that
+decides a hover colour is exactly the app's own. That is how the active-row
+specificity bug was confirmed fixed rather than assumed fixed.
+
+### Still deferred, deliberately
+
+The real sequence renderer; screen 5 (progress / pause / cancel); PIS
+computation; run-time estimation; FASTA rename; source reordering; the Search
+row under the focal box. All are drawn inert rather than faked.

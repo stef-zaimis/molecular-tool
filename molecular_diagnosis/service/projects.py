@@ -14,7 +14,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from molecular_diagnosis.project.service import PROJECT_DB_NAME, ProjectError, ProjectService
+from molecular_diagnosis.project.service import (
+    PROJECT_DB_NAME,
+    ProjectError,
+    ProjectService,
+    validate_fasta_candidate,
+)
 from molecular_diagnosis.service.errors import ErrorCode, ServiceError
 
 __all__ = ["PROJECT_METHODS", "close_open_project", "current_project"]
@@ -192,6 +197,30 @@ def link_fasta(params: dict[str, Any]) -> dict[str, Any]:
     return {"fastaFileId": row.id, "source": status.to_payload()}
 
 
+def validate_fasta_candidate_method(params: dict[str, Any]) -> dict[str, Any]:
+    """
+    Vet a file before it is linked. Writes nothing, and needs no open project.
+
+    The new-project screen runs before any database exists, so this deliberately
+    does NOT call `current_project()`. It is the same scan the indexer performs,
+    which is the point: a file accepted here cannot be rejected at link time for
+    a reason the user was never shown.
+    """
+    path = _require_str(params, "path")
+    return {"candidate": _guard(lambda: validate_fasta_candidate(path))}
+
+
+def set_fasta_file_locked(params: dict[str, Any]) -> dict[str, Any]:
+    """Lock or unlock a linked source. A locked source stays analysable."""
+    project = current_project()
+    file_id = _require_str(params, "fastaFileId")
+    locked = params.get("locked")
+    if not isinstance(locked, bool):
+        raise ServiceError(ErrorCode.INVALID_PARAMETER, "'locked' must be true or false.")
+    status = _guard(lambda: project.set_fasta_file_locked(file_id, locked))
+    return {"source": status.to_payload()}
+
+
 def unlink_fasta(params: dict[str, Any]) -> dict[str, Any]:
     project = current_project()
     file_id = _require_str(params, "fastaFileId")
@@ -308,6 +337,84 @@ def replace_focal_entries(params: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def _require_headers(params: dict[str, Any], key: str = "headers") -> list[str]:
+    value = params.get(key)
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise ServiceError(
+            ErrorCode.INVALID_PARAMETER, f"'{key}' must be a list of strings.", detail=repr(value)
+        )
+    return value
+
+
+def save_focal_set(params: dict[str, Any]) -> dict[str, Any]:
+    """
+    The explicit Save the workspace calls. Nothing else in editing writes.
+
+    `focalSetId` absent or null creates; an id updates in place.
+    """
+    project = current_project()
+    set_id = params.get("focalSetId")
+    if set_id is not None and not isinstance(set_id, str):
+        raise ServiceError(
+            ErrorCode.INVALID_PARAMETER, "'focalSetId' must be an id or null.", detail=repr(set_id)
+        )
+    title = _require_str(params, "title")
+    headers = _require_headers(params)
+
+    return {
+        "focalSet": _guard(
+            lambda: project.save_focal_set(focal_set_id=set_id, title=title, headers=headers)
+        )
+    }
+
+
+def header_presence(params: dict[str, Any]) -> dict[str, Any]:
+    """
+    Presence for arbitrary headers, including ones not saved to any focal set.
+
+    Index-only and non-mutating: safe to call on every debounced keystroke.
+    """
+    project = current_project()
+    headers = _require_headers(params)
+    selected = params.get("selectedFastaFileId")
+    scope_ids = _optional_scope(params)
+
+    return {
+        "entries": _guard(
+            lambda: project.header_presence(
+                headers,
+                selected_file_id=selected if isinstance(selected, str) else None,
+                fasta_file_ids=scope_ids,
+            )
+        )
+    }
+
+
+def match_focal_headers(params: dict[str, Any]) -> dict[str, Any]:
+    """`-` against a working copy, using Python's casefold rather than JS's."""
+    project = current_project()
+    query = params.get("query")
+    if not isinstance(query, str):
+        raise ServiceError(ErrorCode.INVALID_PARAMETER, "'query' must be a string.")
+    headers = _require_headers(params)
+    return _guard(lambda: project.match_focal_headers(query, headers))
+
+
+def resolve_focal_add_query(params: dict[str, Any]) -> dict[str, Any]:
+    """
+    What `+` would add, resolved but NOT added.
+
+    Non-mutating, uncapped, and scope-verified exactly as the mutating `+` is:
+    the renderer appends the result to a working draft and saves separately.
+    """
+    project = current_project()
+    query = params.get("query")
+    if not isinstance(query, str):
+        raise ServiceError(ErrorCode.INVALID_PARAMETER, "'query' must be a string.")
+    scope_ids = _optional_scope(params)
+    return _guard(lambda: project.resolve_focal_add_query(query, fasta_file_ids=scope_ids))
+
+
 def add_focal_entries(params: dict[str, Any]) -> dict[str, Any]:
     """`+` mode: a query expands to complete headers, which become members."""
     project = current_project()
@@ -376,8 +483,10 @@ PROJECT_METHODS = {
     "project.close": close_project,
     "project.setTitle": set_project_title,
     "project.refreshSources": refresh_sources,
+    "project.validateFastaCandidate": validate_fasta_candidate_method,
     "project.linkFasta": link_fasta,
     "project.unlinkFasta": unlink_fasta,
+    "project.setFastaFileLocked": set_fasta_file_locked,
     "project.relinkFasta": relink_fasta,
     "project.reindexFasta": reindex_fasta,
     "project.searchHeaders": search_headers,
@@ -388,6 +497,10 @@ PROJECT_METHODS = {
     "project.setFocalSetLocked": set_focal_set_locked,
     "project.deleteFocalSet": delete_focal_set,
     "project.replaceFocalEntries": replace_focal_entries,
+    "project.saveFocalSet": save_focal_set,
+    "project.headerPresence": header_presence,
+    "project.matchFocalHeaders": match_focal_headers,
+    "project.resolveFocalAddQuery": resolve_focal_add_query,
     "project.addFocalEntries": add_focal_entries,
     "project.removeFocalEntries": remove_focal_entries,
     "project.focalPresence": focal_presence,

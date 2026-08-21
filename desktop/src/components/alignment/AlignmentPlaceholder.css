@@ -8,33 +8,12 @@
   padding-bottom: var(--inset-workspace-bottom);
 }
 
-/*
- * Vertical rail sitting to the LEFT of the panel, as in the reference.
- * Presentational for now: the alignment viewer will own the real scrollbar.
- */
-.alignment__rail {
-  position: relative;
-  flex: 0 0 var(--w-viewer-scrollbar);
-  width: var(--w-viewer-scrollbar);
-  background: var(--c-muted);
-}
-
-.alignment__rail-thumb {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 45%;
-  height: 9%;
-  background: var(--c-chrome);
-}
-
 .alignment__panel {
   flex: 1 1 auto;
   min-width: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-left: 2px;
   background: var(--c-surface);
   overflow: hidden;
 }

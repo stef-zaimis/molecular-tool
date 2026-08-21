@@ -101,10 +101,14 @@ export interface ProjectDraft {
 /**
  * What a saved project file would need to contain.
  *
- * BACKEND GAP: no project format exists anywhere in the repository. Nothing in
- * the Python package reads or writes project metadata — it takes three loose
- * arguments (fasta path, focal string, output directory) per invocation
- * (REPO_MAP §7). The shape below is a proposal, not an implemented format.
+ * SUPERSEDED. Projects are now real and persistent: one `project.sqlite` per
+ * project directory, owned by `molecular_diagnosis.project`, holding the
+ * linked FASTA files, their header indexes, and the focal sets. The
+ * IMPLEMENTED shapes are `OpenProjectResult`, `SourceStatusPayload` and
+ * `FocalSetPayload` in backendContract.ts — use those.
+ *
+ * This interface is kept only as the record of what was proposed before that
+ * existed. Nothing reads or writes it.
  */
 export interface PersistedProject {
   readonly formatVersion: 1;
@@ -114,13 +118,17 @@ export interface PersistedProject {
   readonly updatedAt: IsoTimestamp;
 
   /**
-   * BACKEND GAP: undecided whether the FASTA is referenced by path or copied
-   * into the project. A bare path breaks when the project moves between
-   * machines; copying duplicates a 1.8 MB alignment per project.
+   * RESOLVED as "referenced by path": a project links FASTA files and never
+   * copies them. The consequence — that a linked file can move or change under
+   * the project — is handled by verification rather than avoided, which is what
+   * `SourceStatusPayload` reports.
    */
   readonly fastaPath: FilePath;
 
-  /** BACKEND GAP: no integrity check exists today. Needed to detect the FASTA changing under a saved project. */
+  /**
+   * RESOLVED: the project database stores the SHA-256 the header index was
+   * built from, plus size and mtime for a cheap first check.
+   */
   readonly fastaChecksum?: string;
 
   readonly analyses: AnalysisSelection;
@@ -130,10 +138,10 @@ export interface PersistedProject {
   readonly consensus?: ConsensusConfig;
 
   /**
-   * BACKEND GAP: results are currently only files on disk with
-   * collision-avoiding names (`DMCs_output(2).txt`, REPO_MAP §10). There is no
-   * record of which run produced which file, so a reopened project cannot
-   * currently restore its results.
+   * STILL A GAP: results are files on disk with collision-avoiding names
+   * (`DMCs_output(2).txt`, REPO_MAP §10), now written into the project's own
+   * `outputs/` directory. Nothing records which run produced which file, so a
+   * reopened project still cannot restore its results.
    */
   readonly runs?: readonly AnalysisRunRecord[];
 }
@@ -154,26 +162,29 @@ export interface OpenProjectResponse {
 /* ------------------------------------------------------------------ */
 
 /**
- * A named group of focal search strings.
+ * A named group of focal search strings — the LEGACY, session-local model.
  *
- * BACKEND GAP: the Python API accepts EXACTLY ONE focal string. It is a single
- * `target_string` threaded through `split_focal_headers`,
- * `find_dmc_information`, `compute_metrics` and `build_sheet` (REPO_MAP §4.2),
- * and it is also used to name consensus FASTA records. The frontend models a
- * list because the design shows multiple tokens; reconciling the two is
- * explicitly out of scope for the UI phase and MUST NOT be resolved by
- * changing Python behaviour unilaterally.
+ * SUPERSEDED on the project path. A project focal set is persistent, carries a
+ * title and a lock, and its members are EXACT complete headers rather than
+ * search strings; see `FocalSetPayload` in backendContract.ts and `FocalDraft`
+ * in app/state/focalDrafts.ts.
+ *
+ * The multiple-strings gap is also closed: the Python core takes a selector
+ * list, and a project set resolves a search to exact headers once and matches
+ * by identity afterwards (`ExactHeaders`). This type remains only for the
+ * non-project `analysis.*` entry points, which still take substrings.
  */
 export interface FocalSet {
   readonly id: Id;
-  /** The "FOCAL SET TITLE" field. Frontend-only today — Python has no equivalent. */
+  /** The "FOCAL SET TITLE" field. Persistent for project focal sets. */
   title: string;
   /**
    * The focal set, as an ARRAY. This is the source of truth: the UI shows the
    * entries separated by ';', but that separator is presentation only and is
    * rejected inside an individual entry so the display stays unambiguous.
    *
-   * BACKEND GAP: multiple strings; Python consumes exactly one `target_string`.
+   * RESOLVED: Python accepts a selector list. On the project path these are
+   * exact headers, not substrings.
    */
   strings: readonly string[];
 }

@@ -78,6 +78,7 @@ class SourceStatus:
     sequence_count: int | None
     alignment_length: int | None
     duplicate_header_count: int
+    locked: bool = False
     message: str | None = None
 
     @property
@@ -107,6 +108,7 @@ class SourceStatus:
             "sequenceCount": self.sequence_count,
             "alignmentLength": self.alignment_length,
             "duplicateHeaderCount": self.duplicate_header_count,
+            "locked": self.locked,
             "message": self.message,
         }
 
@@ -297,5 +299,6 @@ class SourceVerifier:
             sequence_count=row.sequence_count,
             alignment_length=row.alignment_length,
             duplicate_header_count=row.duplicate_header_count,
+            locked=row.locked,
             message=message,
         )

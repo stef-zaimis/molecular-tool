@@ -35,6 +35,10 @@ def new_id() -> str:
     return str(uuid.uuid4())
 
 
+def _chunks(values: list[str], size: int) -> list[list[str]]:
+    return [values[start : start + size] for start in range(0, len(values), size)] or [[]]
+
+
 @dataclass(frozen=True)
 class FastaFileRow:
     id: str
@@ -50,6 +54,8 @@ class FastaFileRow:
     duplicate_header_count: int
     index_revision: int
     indexed_at_ms: int | None
+    #: A locked source may be analysed but not unlinked or renamed.
+    locked: bool = False
 
     @property
     def has_index(self) -> bool:
@@ -97,6 +103,7 @@ def _file_row(row: sqlite3.Row) -> FastaFileRow:
         duplicate_header_count=row["duplicate_header_count"],
         index_revision=row["index_revision"],
         indexed_at_ms=row["indexed_at_ms"],
+        locked=bool(row["locked"]),
     )
 
 
@@ -195,6 +202,12 @@ class Repository:
             (str(path), normalise_path_key(path), display_name_for(path), now_ms(), file_id),
         )
 
+    def set_fasta_file_locked(self, file_id: str, locked: bool) -> None:
+        self.con.execute(
+            "UPDATE fasta_file SET locked = ?, updated_at_ms = ? WHERE id = ?",
+            (1 if locked else 0, now_ms(), file_id),
+        )
+
     def touch_indexed_stat(self, file_id: str, size_bytes: int, mtime_ns: int) -> None:
         """
         Refresh only the cheap change-detector fields.
@@ -284,6 +297,41 @@ class Repository:
             " WHERE header = ? AND fasta_file_id = ? ORDER BY ordinal",
             (header, file_id),
         ).fetchall()
+
+    def count_headers_in_files(
+        self, headers: Sequence[str], file_ids: Sequence[str]
+    ) -> dict[tuple[str, str], int]:
+        """
+        How many records carry each exact header, per file, in one batched pass.
+
+        Returns {(fasta_file_id, header): occurrences}; a pair that is absent
+        simply has none. This is the lookup behind live presence feedback while
+        the user types, so it touches ONLY the header index — no file is opened,
+        stat-ed, hashed or scanned here.
+
+        Both lists are chunked because SQLite caps the number of bound
+        parameters (999 on older builds), and a focal draft can easily carry
+        more headers than that.
+        """
+        if not headers or not file_ids:
+            return {}
+
+        counts: dict[tuple[str, str], int] = {}
+        # Two chunked lists, so the product of the two chunk sizes plus slack
+        # stays well under the parameter cap.
+        for header_chunk in _chunks(list(dict.fromkeys(headers)), 400):
+            for file_chunk in _chunks(list(dict.fromkeys(file_ids)), 100):
+                header_slots = ",".join("?" for _ in header_chunk)
+                file_slots = ",".join("?" for _ in file_chunk)
+                rows = self.con.execute(
+                    "SELECT fasta_file_id, header, COUNT(*) AS occurrences FROM fasta_record"
+                    f" WHERE header IN ({header_slots}) AND fasta_file_id IN ({file_slots})"
+                    " GROUP BY fasta_file_id, header",
+                    [*header_chunk, *file_chunk],
+                ).fetchall()
+                for row in rows:
+                    counts[(row["fasta_file_id"], row["header"])] = row["occurrences"]
+        return counts
 
     def files_containing_header(self, header: str) -> list[str]:
         return [

@@ -17,6 +17,17 @@
   transition: none;
 }
 
+/*
+ * On a FASTA row the default disc is the row's own colour, so it disappears.
+ * Sampled from page 3 of docs/new/all_pages-20Aug2026.svg, where the seq / bp /
+ * PIS dots are drawn as a #525f72 disc with a #7f92ae question mark — the
+ * inverse of the treatment used on the page background.
+ */
+.help__dot--on-row {
+  --icon-bg: var(--c-bg);
+  --icon-fg: var(--c-muted);
+}
+
 .help__dot:hover,
 .help__dot.is-open {
   --icon-bg: var(--c-chrome);

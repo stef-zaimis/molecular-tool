@@ -1,0 +1,18 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "visual-static",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8899"],
+      "port": 8899
+    },
+    {
+      "name": "renderer",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vite", "--port", "8900", "--strictPort"],
+      "cwd": "desktop",
+      "port": 8900
+    }
+  ]
+}

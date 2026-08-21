@@ -1,11 +1,18 @@
 import type { DiagnosisResumeState } from '../../backendContract';
-import type { AlignmentLoadState, DiagnosisRunState } from '../../app/state/projectState';
+import type { DiagnosisRunState } from '../../app/state/projectState';
+import type { RunGate } from '../../app/state/runGate';
 import './DiagnosisRunPanel.css';
 
 interface DiagnosisRunPanelProps {
   readonly run: DiagnosisRunState;
-  readonly alignment: AlignmentLoadState;
-  readonly focalStrings: readonly string[];
+  /**
+   * Whether a run may start, and why not.
+   *
+   * Computed in `runGate.ts` from the same facts the backend checks, so the
+   * button explains itself before the click instead of the user discovering
+   * the refusal afterwards.
+   */
+  readonly gate: RunGate;
   readonly onRun: () => void;
   readonly onContinue: (resume: DiagnosisResumeState) => void;
   readonly onDismissContinuation: () => void;
@@ -30,23 +37,15 @@ function fileName(filePath: string): string {
  */
 export function DiagnosisRunPanel({
   run,
-  alignment,
-  focalStrings,
+  gate,
   onRun,
   onContinue,
   onDismissContinuation,
   onReveal,
 }: DiagnosisRunPanelProps): JSX.Element {
-  const alignmentReady = alignment.status === 'loaded';
-  const hasFocal = focalStrings.length > 0;
   const running = run.status === 'running';
-  const canRun = alignmentReady && hasFocal && !running;
-
-  const blockedReason = !alignmentReady
-    ? 'Load a FASTA file before running the analysis.'
-    : !hasFocal
-      ? 'Add at least one focal string before running the analysis.'
-      : undefined;
+  const canRun = gate.canRun;
+  const blockedReason = gate.reason ?? undefined;
 
   return (
     <section className="run-panel" aria-label="Molecular Diagnosis run">
@@ -70,6 +69,13 @@ export function DiagnosisRunPanel({
         )}
 
         {blockedReason && !running && <span className="run-panel__status">{blockedReason}</span>}
+
+        {run.status === 'succeeded' && (
+          <span className="run-panel__status">
+            {run.result.sequenceCount} sequences · alignment length{' '}
+            {run.result.alignmentLength ?? '—'}
+          </span>
+        )}
       </div>
 
       {run.status === 'failed' && (

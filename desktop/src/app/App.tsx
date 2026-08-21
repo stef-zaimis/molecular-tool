@@ -1,18 +1,19 @@
 import { TitleBar } from '../components/chrome/TitleBar';
 import { TabStrip } from '../components/chrome/TabStrip';
 import { LauncherScreen } from '../screens/LauncherScreen';
-import { ProjectCreationScreen } from '../screens/ProjectCreationScreen';
+import { ProjectScreen } from '../screens/ProjectScreen';
 import { MolecularDiagnosisScreen } from '../screens/MolecularDiagnosisScreen';
 import { useProject } from './state/ProjectContext';
-import { ANALYSIS_LABELS, selectedAnalyses } from './state/projectState';
+import { useWorkspaceZoom } from './uiScale';
+import { ANALYSIS_LABELS, IMPLEMENTED_ANALYSES, selectedAnalyses } from './state/projectState';
 import type { AnalysisKind } from '../contract';
 
 /**
  * Placeholder for an analysis that is selected but has no workspace yet.
  *
  * Molecular Diagnosis is the only analysis screen in this build. Since tabs are
- * now generated from the project's selection, the others are reachable, and a
- * blank page would read as a bug rather than as unfinished work.
+ * generated from the project's selection, the others are reachable, and a blank
+ * page would read as a bug rather than as unfinished work.
  */
 function NotBuiltYet({ label }: { label: string }): JSX.Element {
   return (
@@ -27,19 +28,25 @@ function NotBuiltYet({ label }: { label: string }): JSX.Element {
 }
 
 /**
- * The workspace shell: window chrome + analysis tabs + the active analysis page.
+ * The project shell: window chrome, the analysis tab strip, and a page.
  *
- * The tab list IS the project's analysis selection — analyses that were not
- * selected have no tab, rather than a disabled one. Home is the project page,
- * so it navigates to project creation rather than acting as a history "back".
+ * Home IS the project page, and the analysis tabs are the project's own
+ * selection — so moving between the project page and a workspace is one tab
+ * strip, not a wizard with a Continue button.
  */
-function WorkspaceScreen(): JSX.Element {
+function ProjectShell({ screen }: { screen: 'project' | 'workspace' }): JSX.Element {
   const { state, dispatch } = useProject();
 
-  const tabs = selectedAnalyses(state.draft.analyses).map((analysis) => ({
-    id: analysis,
-    label: ANALYSIS_LABELS[analysis],
-  }));
+  // Analyses belong to a project, so there are no tabs until one exists.
+  const tabs =
+    state.project.status === 'open'
+      ? selectedAnalyses(state.analyses).map((analysis) => ({
+          id: analysis,
+          label: ANALYSIS_LABELS[analysis],
+        }))
+      : [];
+
+  const onProjectPage = screen === 'project';
 
   return (
     <div className="app-shell">
@@ -47,19 +54,27 @@ function WorkspaceScreen(): JSX.Element {
 
       <TabStrip
         tabs={tabs}
-        activeId={state.activeAnalysis}
-        onHome={() => dispatch({ type: 'navigate', screen: 'projectCreation' })}
-        onSelect={(id) => dispatch({ type: 'setActiveAnalysis', analysis: id as AnalysisKind })}
+        activeId={onProjectPage ? null : state.activeAnalysis}
+        homeActive={onProjectPage}
+        onHome={() => dispatch({ type: 'navigate', screen: 'project' })}
+        onSelect={(id) => {
+          dispatch({ type: 'setActiveAnalysis', analysis: id as AnalysisKind });
+          dispatch({ type: 'navigate', screen: 'workspace' });
+        }}
         homeLabel="Project page"
       />
 
-      <main className="app-body">
-        {state.activeAnalysis === 'molecularDiagnosis' ? (
-          <MolecularDiagnosisScreen />
-        ) : (
-          <NotBuiltYet label={ANALYSIS_LABELS[state.activeAnalysis]} />
-        )}
-      </main>
+      {onProjectPage ? (
+        <ProjectScreen />
+      ) : (
+        <main className="app-body">
+          {IMPLEMENTED_ANALYSES.includes(state.activeAnalysis) ? (
+            <MolecularDiagnosisScreen />
+          ) : (
+            <NotBuiltYet label={ANALYSIS_LABELS[state.activeAnalysis]} />
+          )}
+        </main>
+      )}
     </div>
   );
 }
@@ -67,13 +82,18 @@ function WorkspaceScreen(): JSX.Element {
 export function App(): JSX.Element {
   const { state } = useProject();
 
+  // Keeps the 1920x1080 design frame usable at 125% Windows scaling. See
+  // uiScale.ts: at 1920 it is exactly 1 and changes nothing, and the launcher —
+  // which has its own small window and its own frame — is never scaled.
+  useWorkspaceZoom(state.screen !== 'launcher');
+
   switch (state.screen) {
     case 'launcher':
       return <LauncherScreen />;
-    case 'projectCreation':
-      return <ProjectCreationScreen />;
+    case 'project':
+      return <ProjectShell screen="project" />;
     case 'workspace':
-      return <WorkspaceScreen />;
+      return <ProjectShell screen="workspace" />;
     default:
       return <LauncherScreen />;
   }

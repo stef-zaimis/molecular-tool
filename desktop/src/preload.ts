@@ -1,12 +1,15 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type {
   BackendResult,
+  FastaCandidate,
   FastaLoadResult,
   FocalPresencePayload,
   FocalQueryResult,
   FocalReplacementResult,
   FocalSetPayload,
   FocalValidationResult,
+  HeaderPresencePayload,
+  MatchFocalHeadersResult,
   MolecularDiagnosisRequest,
   MolecularDiagnosisResult,
   OpenProjectResult,
@@ -14,6 +17,8 @@ import type {
   ProjectDiagnosisResult,
   ProjectMetadata,
   RelinkResult,
+  ResolveFocalAddQueryResult,
+  SaveFocalSetRequest,
   SearchHeadersResult,
   SourceStatusPayload,
 } from './backendContract';
@@ -51,6 +56,9 @@ const desktopApi = {
   dialog: {
     /** Returns the chosen absolute path, or null if the user cancelled. */
     selectFastaFile: (): Promise<string | null> => ipcRenderer.invoke('dialog:select-fasta-file'),
+    /** Multi-select variant. Empty when the user cancelled. */
+    selectFastaFiles: (): Promise<readonly string[]> =>
+      ipcRenderer.invoke('dialog:select-fasta-files'),
     /** Writes the focal set to a user-chosen .txt file, one entry per line. */
     exportFocalSet: (payload: {
       suggestedName: string;
@@ -125,10 +133,26 @@ const desktopApi = {
     ): Promise<BackendResult<{ sources: readonly SourceStatusPayload[] }>> =>
       ipcRenderer.invoke('project:refresh-sources', { strong }),
 
+    /**
+     * Vet a file before linking it. Writes nothing, and needs NO open project:
+     * the new-project screen runs before the database exists.
+     */
+    validateFastaCandidate: (
+      path: string,
+    ): Promise<BackendResult<{ candidate: FastaCandidate }>> =>
+      ipcRenderer.invoke('project:validate-fasta-candidate', { path }),
+
     linkFasta: (
       path: string,
     ): Promise<BackendResult<{ fastaFileId: string; source: SourceStatusPayload }>> =>
       ipcRenderer.invoke('project:link-fasta', { path }),
+
+    /** Lock or unlock a linked source. A locked source stays analysable. */
+    setFastaFileLocked: (
+      fastaFileId: string,
+      locked: boolean,
+    ): Promise<BackendResult<{ source: SourceStatusPayload }>> =>
+      ipcRenderer.invoke('project:set-fasta-file-locked', { fastaFileId, locked }),
 
     unlinkFasta: (fastaFileId: string): Promise<BackendResult<{ removed: string }>> =>
       ipcRenderer.invoke('project:unlink-fasta', { fastaFileId }),
@@ -207,6 +231,51 @@ const desktopApi = {
       headers: readonly string[],
     ): Promise<BackendResult<FocalReplacementResult>> =>
       ipcRenderer.invoke('project:replace-focal-entries', { focalSetId, headers }),
+
+    /**
+     * The workspace's explicit Save. The ONLY focal write ordinary editing
+     * performs — everything else in the editor is a working copy in memory.
+     */
+    saveFocalSet: (
+      request: SaveFocalSetRequest,
+    ): Promise<BackendResult<{ focalSet: FocalSetPayload }>> =>
+      ipcRenderer.invoke('project:save-focal-set', request),
+
+    /**
+     * Presence for arbitrary headers, including unsaved draft ones.
+     *
+     * Index-only: no file is opened, hashed or reindexed, and nothing is
+     * persisted. Safe on a debounce while the user types.
+     */
+    headerPresence: (
+      headers: readonly string[],
+      selectedFastaFileId?: string | null,
+      fastaFileIds?: readonly string[],
+    ): Promise<BackendResult<{ entries: readonly HeaderPresencePayload[] }>> =>
+      ipcRenderer.invoke('project:header-presence', {
+        headers,
+        selectedFastaFileId,
+        fastaFileIds,
+      }),
+
+    /**
+     * Resolve `+` without applying it: every matching complete header, uncapped.
+     *
+     * This is what the editor appends to its working draft. `searchHeaders` is
+     * a capped preview and must not be used for it.
+     */
+    resolveFocalAddQuery: (
+      query: string,
+      fastaFileIds?: readonly string[],
+    ): Promise<BackendResult<ResolveFocalAddQueryResult>> =>
+      ipcRenderer.invoke('project:resolve-focal-add-query', { query, fastaFileIds }),
+
+    /** `-` over a working copy, using Python's casefold rather than JS's. */
+    matchFocalHeaders: (
+      query: string,
+      headers: readonly string[],
+    ): Promise<BackendResult<MatchFocalHeadersResult>> =>
+      ipcRenderer.invoke('project:match-focal-headers', { query, headers }),
 
     /**
      * `+` mode: a transient query expands to exact headers, which become

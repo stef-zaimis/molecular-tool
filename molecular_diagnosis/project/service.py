@@ -27,7 +27,7 @@ from molecular_diagnosis.project.locations import (
     presence_for_entries,
     verify_entry_locations,
 )
-from molecular_diagnosis.project.paths import normalise_path_key
+from molecular_diagnosis.project.paths import display_name_for, normalise_path_key
 from molecular_diagnosis.project.repository import FastaFileRow, FocalSetRow, Repository
 from molecular_diagnosis.project.search import resolve_headers, search_headers
 from molecular_diagnosis.project.sources import SourceState, SourceStatus, SourceVerifier, hash_file
@@ -56,6 +56,69 @@ class ProjectError(RuntimeError):
         self.code = code
         self.message = message
         self.detail = detail
+
+
+def validate_fasta_candidate(path: str | Path) -> dict[str, object]:
+    """
+    Decide whether a file may be linked at all — WITHOUT linking it.
+
+    Deliberately module-level: the new-project screen has to vet files before
+    any project exists, so this cannot depend on an open database. It also runs
+    no differently from the real thing, because it uses the same `scan_fasta`
+    the indexer does. Judging a FASTA by its extension would accept a renamed
+    spreadsheet and reject a valid `.txt`.
+
+    Returns the metadata the pending row shows. Raises a coded `ProjectError`
+    for every reason a file cannot be used, so the caller can say which one.
+    """
+    candidate = Path(path)
+    if not candidate.is_file():
+        raise ProjectError(
+            "FASTA_NOT_FOUND", "That file could not be found.", detail=str(path)
+        )
+
+    try:
+        scan = scan_fasta(candidate)
+    except SourceChangedDuringRead as error:
+        raise ProjectError(
+            "SOURCE_CHANGED_DURING_READ",
+            "The file kept changing while it was being read.",
+            detail=str(error),
+        ) from error
+    except OSError as error:
+        raise ProjectError(
+            "FASTA_UNREADABLE", "That file could not be read.", detail=str(error)
+        ) from error
+
+    # No '>' line anywhere means this is not a FASTA at all, which is the same
+    # outcome as an empty one: there is nothing to analyse.
+    if not scan.records:
+        raise ProjectError(
+            "FASTA_EMPTY",
+            "That file contains no FASTA sequences.",
+            detail=candidate.name,
+        )
+    if not scan.sequences:
+        raise ProjectError(
+            "FASTA_EMPTY", "That FASTA file contains no sequences.", detail=candidate.name
+        )
+    if scan.alignment_length is None:
+        raise ProjectError(
+            "FASTA_NOT_ALIGNED",
+            "The FASTA file needs to be aligned.",
+            detail=(
+                f"{candidate.name}: the sequences are not all the same length, so this is "
+                "not an aligned FASTA."
+            ),
+        )
+
+    return {
+        "path": str(candidate),
+        "displayName": display_name_for(candidate),
+        "sequenceCount": scan.sequence_count,
+        "alignmentLength": scan.alignment_length,
+        "duplicateHeaderCount": scan.duplicate_header_count,
+    }
 
 
 def dedupe_headers(headers: Sequence[str]) -> list[str]:
@@ -206,10 +269,20 @@ class ProjectService:
         ]
 
     def link_fasta(self, path: str) -> tuple[FastaFileRow, SourceStatus]:
-        """Register a FASTA and build its first complete header index."""
-        candidate = Path(path)
-        if not candidate.is_file():
-            raise ProjectError("FASTA_NOT_FOUND", "The FASTA file could not be found.", detail=path)
+        """
+        Register a FASTA and build its first complete header index.
+
+        Linking is ALL OR NOTHING for a new file. It used to insert the row
+        first and index afterwards, so a file that turned out to be ragged or
+        unreadable left a permanent `fasta_file` row behind that the user then
+        had to clean up. Now the candidate is vetted before anything is
+        written, and if indexing still fails — the file can change between the
+        two reads — the row this call created is removed again.
+
+        Re-linking a path that is already in the project is left alone on
+        failure: that row is not ours to delete.
+        """
+        validate_fasta_candidate(path)
 
         existing = self.repository.find_by_path(path)
         self.repository.begin()
@@ -220,16 +293,58 @@ class ProjectService:
             self.repository.rollback()
             raise
 
-        if existing is None or not row.has_index:
-            status = self.reindex(row.id)
-        else:
-            status = self.verifier.ensure_current(row, strong=True)
+        try:
+            if existing is None or not row.has_index:
+                status = self.reindex(row.id)
+            else:
+                status = self.verifier.ensure_current(row, strong=True)
+        except Exception:
+            if existing is None:
+                # We created this row moments ago; nothing else can depend on
+                # it yet, so removing it restores the project exactly.
+                self.repository.begin()
+                try:
+                    self.repository.remove_fasta_file(row.id)
+                    self.repository.commit()
+                except Exception:
+                    self.repository.rollback()
+                    raise
+                self.verifier.forget(row.id)
+                self.alignments.invalidate(row.id)
+            raise
 
         row = self.repository.get_fasta_file(row.id)
         assert row is not None
         return row, status
 
+    def set_fasta_file_locked(self, file_id: str, locked: bool) -> SourceStatus:
+        """
+        Lock or unlock a linked source.
+
+        A locked source stays analysable — locking protects the LINK, not the
+        data. It is what stops a settled input being unlinked by a mis-click.
+        """
+        self._require_file(file_id)
+        self.repository.begin()
+        try:
+            self.repository.set_fasta_file_locked(file_id, locked)
+            self.repository.commit()
+        except Exception:
+            self.repository.rollback()
+            raise
+        return self.verifier.cheap_status(self._require_file(file_id))
+
     def unlink_fasta(self, file_id: str) -> None:
+        row = self._require_file(file_id)
+        if row.locked:
+            # Enforced here, not only by hiding the button: a lock that only
+            # exists in React is not a property of the project.
+            raise ProjectError(
+                "FASTA_FILE_LOCKED",
+                f"{row.display_name} is locked. Unlock it before removing it.",
+                detail=file_id,
+            )
+
         self.repository.begin()
         try:
             self.repository.remove_fasta_file(file_id)
@@ -640,6 +755,155 @@ class ProjectService:
             "kept": diff["kept"],
         }
 
+    def save_focal_set(
+        self, *, focal_set_id: str | None, title: str, headers: Sequence[str]
+    ) -> dict[str, object]:
+        """
+        The UI's explicit Save boundary: title + membership, in one transaction.
+
+        Editing a focal set in the workspace writes NOTHING; the renderer holds
+        a working copy and calls this when the user saves. That is what makes
+        "unsaved changes" a real state rather than a label on data already
+        committed.
+
+        `focal_set_id=None` creates the set and its entries together — a create
+        that half-succeeded would leave a titled, empty set behind. An existing
+        id updates in place, as a diff, so surviving headers keep their entry
+        ids and their `focal_entry_location` rows.
+
+        Headers are trimmed and deduplicated, first occurrence winning. A header
+        that matches no FASTA is still stored: it is a member the user typed,
+        and presence will report it as missing rather than the save discarding
+        it.
+        """
+        cleaned_title = title.strip()
+        if not cleaned_title:
+            raise ProjectError("INVALID_PARAMETER", "A focal set needs a title.")
+
+        wanted = dedupe_headers(headers)
+
+        if focal_set_id is not None:
+            self._require_unlocked(focal_set_id)
+
+        self.repository.begin()
+        try:
+            if focal_set_id is None:
+                row = self.repository.create_focal_set(cleaned_title)
+                set_id = row.id
+            else:
+                set_id = focal_set_id
+                self.repository.rename_focal_set(set_id, cleaned_title)
+
+            diff = self.repository.replace_focal_entries(set_id, wanted)
+            if diff["added"]:
+                added = set(diff["added"])
+                new_entries = [
+                    entry
+                    for entry in self.repository.list_focal_entries(set_id)
+                    if entry.header in added
+                ]
+                self._seed_locations_from_index(new_entries, self._trusted_file_ids())
+            self.repository.commit()
+        except Exception:
+            self.repository.rollback()
+            raise
+
+        return self.focal_set_payload(self._require_focal_set(set_id))
+
+    def header_presence(
+        self,
+        headers: Sequence[str],
+        *,
+        selected_file_id: str | None = None,
+        fasta_file_ids: list[str] | None = None,
+    ) -> list[dict[str, object]]:
+        """
+        Presence of arbitrary exact headers, including UNSAVED draft headers.
+
+        Read-only in every sense: it answers from the header index with a
+        batched lookup, creates no `focal_entry_location` rows, opens no FASTA,
+        and — critically — never hashes or reindexes. It is called on a debounce
+        while the user types, so anything that touched the filesystem per header
+        would make typing cost I/O.
+
+        A file counts as answerable when its stat still matches the fingerprint
+        the index was built from. That is evidence, not proof, and it is the
+        right bar HERE: these colours are editing feedback. The run gate is
+        `focal_presence` + `require_focal_completeness`, which verify locations
+        against the real bytes before any analysis starts.
+        """
+        wanted = dedupe_headers(headers)
+        if not wanted:
+            return []
+
+        scope = self._resolve_scope(fasta_file_ids)
+        answerable: list[str] = []
+        unanswerable: set[str] = set()
+        for row in self.repository.list_fasta_files():
+            if row.id not in scope:
+                continue
+            status = self.verifier.cheap_status(row)
+            if status.state in (SourceState.CURRENT, SourceState.UNVERIFIED):
+                answerable.append(row.id)
+            else:
+                unanswerable.add(row.id)
+
+        counts = self.repository.count_headers_in_files(wanted, answerable)
+
+        results: list[dict[str, object]] = []
+        for header in wanted:
+            occurrences = {
+                file_id: counts[(file_id, header)]
+                for file_id in answerable
+                if (file_id, header) in counts
+            }
+
+            if selected_file_id is None:
+                # All files: presence anywhere in scope is success, so there is
+                # no "elsewhere" to distinguish and orange is not meaningful.
+                if occurrences:
+                    state = PresenceState.PRESENT_CURRENT
+                elif unanswerable:
+                    state = PresenceState.UNKNOWN
+                else:
+                    state = PresenceState.MISSING
+            elif selected_file_id in unanswerable:
+                state = PresenceState.UNKNOWN
+            elif occurrences.get(selected_file_id):
+                state = PresenceState.PRESENT_CURRENT
+            elif occurrences:
+                state = PresenceState.PRESENT_OTHER
+            elif unanswerable:
+                state = PresenceState.UNKNOWN
+            else:
+                state = PresenceState.MISSING
+
+            results.append(
+                {
+                    "header": header,
+                    "state": state.value,
+                    "occurrences": occurrences,
+                }
+            )
+
+        return results
+
+    def match_focal_headers(self, query: str, headers: Sequence[str]) -> dict[str, object]:
+        """
+        Which of these headers contain `query`, case-insensitively.
+
+        This exists so `-` can operate on an unsaved working copy without
+        reimplementing Python's `str.casefold()` in JavaScript. Unicode case
+        folding is not the same as `toLowerCase()`, and two implementations of
+        "the same" rule would eventually disagree about which member a `-`
+        removes.
+        """
+        needle = self._require_query(query).casefold()
+        return {
+            "query": query,
+            "matched": [header for header in headers if needle in header.casefold()],
+        }
+
     def _trusted_file_ids(self) -> list[str]:
         """Files whose header index is already known-good, without any I/O beyond stat."""
         return [
@@ -648,34 +912,68 @@ class ProjectService:
             if self.verifier.cheap_status(row).index_usable
         ]
 
+    def _expand_add_query(
+        self, query: str, fasta_file_ids: list[str] | None
+    ) -> tuple[str, list[str], list[str]]:
+        """
+        The shared body of `+`: verify the scope, then resolve the query.
+
+        Returns (cleaned query, complete matching headers, usable file ids).
+
+        `+` promises "every header in this scope that matches". If a requested
+        file cannot be searched the whole expansion is refused rather than
+        answered from the subset that happened to be readable — that subset
+        looks complete and is not reproducible.
+
+        There is deliberately NO result limit here. A cap belongs to a preview
+        listing; applying one to `+` would silently drop members from the focal
+        set the user asked for.
+        """
+        cleaned = self._require_query(query)
+
+        usable, unusable = self._partition_scope(self._resolve_scope(fasta_file_ids))
+        if unusable:
+            raise ProjectError(
+                "SEARCH_SCOPE_UNAVAILABLE",
+                "Some of the selected files cannot be searched right now, so nothing was "
+                "added.",
+                detail="; ".join(
+                    f"{status.display_name} ({status.state.value})" for status in unusable
+                ),
+            )
+
+        return cleaned, resolve_headers(self.repository, cleaned, fasta_file_ids=usable), usable
+
+    def resolve_focal_add_query(
+        self, query: str, *, fasta_file_ids: list[str] | None = None
+    ) -> dict[str, object]:
+        """
+        What `+` WOULD add, without adding it or writing anything.
+
+        Exists because the renderer edits a working copy: it needs the complete
+        expansion to append to the draft, and the capped `search_headers`
+        preview cannot supply that — a query matching 300 headers must yield
+        all 300, not the first 200.
+
+        Same substring rule, same scope verification, same deterministic
+        project-file/record ordering as `add_focal_entries_from_query`; they
+        share `_expand_add_query`, so the two cannot drift.
+        """
+        cleaned, headers, _usable = self._expand_add_query(query, fasta_file_ids)
+        return {"query": cleaned, "headers": headers}
+
     def add_focal_entries_from_query(
         self, set_id: str, query: str, *, fasta_file_ids: list[str] | None = None
     ) -> dict[str, object]:
         """
         `+` : query -> substring search -> complete headers -> dedupe -> add.
 
-        The query itself never becomes a member.
-
-        If any requested file cannot be searched the whole expansion is
-        refused. `+` promises "every header in this scope that matches", and
-        persisting the subset that happened to be readable would quietly write
-        a different, unrepeatable answer into the project.
+        The query itself never becomes a member. This is the MUTATING form,
+        kept for the direct-to-database path; the renderer resolves through
+        `resolve_focal_add_query` and saves explicitly.
         """
         self._require_unlocked(set_id)
-        query = self._require_query(query)
-
-        usable, unusable = self._partition_scope(self._resolve_scope(fasta_file_ids))
-        if unusable:
-            raise ProjectError(
-                "SEARCH_SCOPE_UNAVAILABLE",
-                "Some of the selected files cannot be searched right now, so the focal set "
-                "was not changed.",
-                detail="; ".join(
-                    f"{status.display_name} ({status.state.value})" for status in unusable
-                ),
-            )
-
-        headers = resolve_headers(self.repository, query, fasta_file_ids=usable)
+        query, headers, usable = self._expand_add_query(query, fasta_file_ids)
 
         self.repository.begin()
         try:

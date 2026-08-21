@@ -35,6 +35,7 @@ const noopApi: DesktopApi = {
   },
   dialog: {
     selectFastaFile: () => Promise.resolve(null),
+    selectFastaFiles: () => Promise.resolve([]),
     exportFocalSet: () => Promise.resolve({ ok: false as const, code: 'NO_DESKTOP_RUNTIME' }),
   },
   analysis: {
@@ -49,7 +50,9 @@ const noopApi: DesktopApi = {
     close: () => Promise.resolve(unavailable),
     setTitle: () => Promise.resolve(unavailable),
     refreshSources: () => Promise.resolve(unavailable),
+    validateFastaCandidate: () => Promise.resolve(unavailable),
     linkFasta: () => Promise.resolve(unavailable),
+    setFastaFileLocked: () => Promise.resolve(unavailable),
     unlinkFasta: () => Promise.resolve(unavailable),
     relinkFasta: () => Promise.resolve(unavailable),
     reindexFasta: () => Promise.resolve(unavailable),
@@ -62,6 +65,10 @@ const noopApi: DesktopApi = {
     deleteFocalSet: () => Promise.resolve(unavailable),
     replaceFocalEntries: () => Promise.resolve(unavailable),
     replaceFocalEntryHeaders: () => Promise.resolve(unavailable),
+    saveFocalSet: () => Promise.resolve(unavailable),
+    headerPresence: () => Promise.resolve(unavailable),
+    matchFocalHeaders: () => Promise.resolve(unavailable),
+    resolveFocalAddQuery: () => Promise.resolve(unavailable),
     addFocalEntries: () => Promise.resolve(unavailable),
     removeFocalEntries: () => Promise.resolve(unavailable),
     focalPresence: () => Promise.resolve(unavailable),

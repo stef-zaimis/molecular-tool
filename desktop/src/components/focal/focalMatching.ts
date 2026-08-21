@@ -1,17 +1,22 @@
 import type { FocalMatchMode } from '../../contract';
 
 /**
- * Focal-string tokenisation and validation.
+ * Focal-string tokenisation, and the LEGACY frontend matcher.
  *
- * This module is the ONLY place that decides what "a token matches a header"
- * means. FocalStringEditor renders state; it never compares strings itself.
- * That separation is deliberate: the matching rule is expected to change
- * (case-insensitive, exact id, field-aware, regex — see contract.ts
- * `FocalMatchMode`) and the editor must not need rewriting when it does.
+ * SCOPE. The project-backed workspace does not match strings in the renderer
+ * at all: `+` resolves through `project.searchHeaders`, `−` through
+ * `project.matchFocalHeaders`, and the colours come from
+ * `project.headerPresence`. All three run Python's own `casefold()` semantics
+ * against the header index, so the renderer cannot disagree with the sequences
+ * an analysis will actually select.
  *
- * The default mode reproduces the current Python behaviour exactly:
- * case-sensitive substring containment, `target_string in header`
- * (REPO_MAP.md §4.2). It is NOT exact-id equality.
+ * What is still used from here is the tokenisation: `TOKEN_SEPARATOR` and the
+ * split/join helpers that render the focal set as `a; b; c`.
+ *
+ * The matcher below (`headerMatchesToken` and friends) remains for the
+ * non-project `analysis.*` entry points, which still take substrings. Its
+ * default mode reproduces the legacy Python behaviour exactly: case-sensitive
+ * substring containment, `target_string in header` (REPO_MAP.md §4.2).
  */
 
 export type FocalTokenState = 'match' | 'noMatch' | 'neutral';
