@@ -23,6 +23,17 @@ from molecular_diagnosis.fasta_io import (
     split_focal_headers,
     validate_aligned_fasta,
 )
+from molecular_diagnosis.progress import (
+    NULL_OBSERVER,
+    STAGE_CONSENSUS,
+    STAGE_DMC_SEARCH,
+    STAGE_FINISHING,
+    STAGE_FIVE_SITE,
+    STAGE_WRITING_CONSENSUS,
+    STAGE_WRITING_REPORT,
+    STAGE_WRITING_WORKBOOK,
+    RunObserver,
+)
 from molecular_diagnosis.models import PipelineResult, PunishmentPipelineResult
 from molecular_diagnosis.punishments import find_focal_punishments
 from molecular_diagnosis.reports import write_text_report
@@ -150,6 +161,7 @@ def run_pipeline_on_sequences(
     start_combination_length: int = 1,
     initial_diagnostic_combinations: list[tuple[int, ...]] | None = None,
     initial_combinations_tested_by_length: dict[int, int] | None = None,
+    observer: RunObserver = NULL_OBSERVER,
 ) -> PipelineResult:
     """
     The pipeline body, over sequences that are ALREADY parsed and verified.
@@ -160,6 +172,10 @@ def run_pipeline_on_sequences(
     single-file path is unchanged.
 
     `source_label` is what the report prints as the input; it is a label only.
+
+    `observer` is optional and defaults to observing nothing. Every stage below
+    is bracketed by it so a caller can say which one a long run is inside; it
+    is told about the work, it never takes part in it.
     """
     output_dir = Path(output_dir)
     ref_id = focal_headers[0]
@@ -169,70 +185,118 @@ def run_pipeline_on_sequences(
         for header in focal_headers
     ]
 
-    consensus_result = build_focal_consensus_result(
-        focal_sequences=focal_sequences,
-    )
-
-    dmc = find_dmc_information(
-        sequences=sequences,
-        focal_strings=selectors,
-        include_ambiguous_dmc_bd=include_ambiguous_dmc_bd,
-        include_gappy_consensus_dmc_sites=include_gappy_consensus_dmc_sites,
-        min_combination_length=min_combination_length,
-        max_combination_length=max_combination_length,
-        start_combination_length=start_combination_length,
-        initial_diagnostic_combinations=initial_diagnostic_combinations,
-        initial_combinations_tested_by_length=initial_combinations_tested_by_length,
-    )
-
-    five_site_result = find_best_five_site_sets(
-        sequences=sequences,
-        ref_id=ref_id,
-        sites=dmc.unique,
-        focal_strings=selectors,
-        diagnostic_states=dmc.states,
-    )
-
-    txt_output_path = next_available_filename(output_dir / TXT_OUTPUT_BASENAME)
-    xlsx_output_path = next_available_filename(output_dir / XLSX_OUTPUT_BASENAME)
-    consensus_txt_output_path = next_available_filename(
-        output_dir / CONSENSUS_TXT_OUTPUT_BASENAME
-    )
-
-    write_text_report(
-        output_path=txt_output_path,
-        fasta_path=source_label,
-        output_dir=output_dir,
-        focal_strings=selectors,
-        sequences=sequences,
+    observer.event(
+        "pipeline.inputs",
+        sequences=len(sequences),
+        focal=len(focal_headers),
+        non_focal=len(non_focal_headers),
         alignment_length=alignment_length,
-        focal_headers=focal_headers,
-        non_focal_headers=non_focal_headers,
-        ref_id=ref_id,
-        dmc=dmc,
-        five_site_result=five_site_result,
-        punishment_result=None,
+        output_dir=str(output_dir),
     )
 
-    write_consensus_text_report(
-        output_path=consensus_txt_output_path,
-        focal_strings=selectors,
-        focal_headers=focal_headers,
-        alignment_length=alignment_length,
-        consensus_result=consensus_result,
-        dmc_sites=dmc.unique,
+    with observer.stage(STAGE_CONSENSUS, focal=len(focal_sequences)):
+        observer.progress(STAGE_CONSENSUS)
+        consensus_result = build_focal_consensus_result(
+            focal_sequences=focal_sequences,
+        )
+
+    with observer.stage(
+        STAGE_DMC_SEARCH,
+        min_size=min_combination_length,
+        max_size=max_combination_length,
+        start_size=start_combination_length,
+    ):
+        observer.progress(STAGE_DMC_SEARCH, detail=str(start_combination_length))
+        dmc = find_dmc_information(
+            sequences=sequences,
+            focal_strings=selectors,
+            include_ambiguous_dmc_bd=include_ambiguous_dmc_bd,
+            include_gappy_consensus_dmc_sites=include_gappy_consensus_dmc_sites,
+            min_combination_length=min_combination_length,
+            max_combination_length=max_combination_length,
+            start_combination_length=start_combination_length,
+            initial_diagnostic_combinations=initial_diagnostic_combinations,
+            initial_combinations_tested_by_length=initial_combinations_tested_by_length,
+            observer=observer,
+        )
+
+    observer.event(
+        "dmc.result",
+        candidate_sites=dmc.candidate_count,
+        unique_sites=len(dmc.unique),
+        combinations_tested=dmc.total_combinations_tested,
+        stop_reason=dmc.stop_reason,
+        stopped_at_length=dmc.stopped_at_length,
     )
 
-    write_excel_report(
-        output_path=xlsx_output_path,
-        sequences=sequences,
-        ref_id=ref_id,
-        full_sites=dmc.unique,
-        focal_strings=selectors,
-        best_gap_sites=five_site_result.best_gap_sites,
-        best_avg_sites=five_site_result.best_avg_sites,
-        diagnostic_states=dmc.states,
+    with observer.stage(STAGE_FIVE_SITE, sites=len(dmc.unique)):
+        observer.progress(STAGE_FIVE_SITE, current=0, total=None)
+        five_site_result = find_best_five_site_sets(
+            sequences=sequences,
+            ref_id=ref_id,
+            sites=dmc.unique,
+            focal_strings=selectors,
+            diagnostic_states=dmc.states,
+            observer=observer,
+        )
+
+    with observer.stage(STAGE_FINISHING, output_dir=str(output_dir)):
+        observer.progress(STAGE_FINISHING)
+        txt_output_path = next_available_filename(output_dir / TXT_OUTPUT_BASENAME)
+        xlsx_output_path = next_available_filename(output_dir / XLSX_OUTPUT_BASENAME)
+        consensus_txt_output_path = next_available_filename(
+            output_dir / CONSENSUS_TXT_OUTPUT_BASENAME
+        )
+    observer.event(
+        "outputs.allocated",
+        report=str(txt_output_path),
+        workbook=str(xlsx_output_path),
+        consensus=str(consensus_txt_output_path),
     )
+
+    with observer.stage(STAGE_WRITING_REPORT, path=str(txt_output_path)):
+        observer.progress(STAGE_WRITING_REPORT)
+        write_text_report(
+            output_path=txt_output_path,
+            fasta_path=source_label,
+            output_dir=output_dir,
+            focal_strings=selectors,
+            sequences=sequences,
+            alignment_length=alignment_length,
+            focal_headers=focal_headers,
+            non_focal_headers=non_focal_headers,
+            ref_id=ref_id,
+            dmc=dmc,
+            five_site_result=five_site_result,
+            punishment_result=None,
+        )
+
+    with observer.stage(STAGE_WRITING_CONSENSUS, path=str(consensus_txt_output_path)):
+        observer.progress(STAGE_WRITING_CONSENSUS)
+        write_consensus_text_report(
+            output_path=consensus_txt_output_path,
+            focal_strings=selectors,
+            focal_headers=focal_headers,
+            alignment_length=alignment_length,
+            consensus_result=consensus_result,
+            dmc_sites=dmc.unique,
+        )
+
+    # openpyxl writes the whole workbook in one go and is the stage most likely
+    # to trip over a filesystem or dependency difference between machines, so
+    # it is bracketed on its own.
+    with observer.stage(STAGE_WRITING_WORKBOOK, path=str(xlsx_output_path)):
+        observer.progress(STAGE_WRITING_WORKBOOK)
+        write_excel_report(
+            output_path=xlsx_output_path,
+            sequences=sequences,
+            ref_id=ref_id,
+            full_sites=dmc.unique,
+            focal_strings=selectors,
+            best_gap_sites=five_site_result.best_gap_sites,
+            best_avg_sites=five_site_result.best_avg_sites,
+            diagnostic_states=dmc.states,
+        )
 
     return PipelineResult(
         txt_output_path=txt_output_path,

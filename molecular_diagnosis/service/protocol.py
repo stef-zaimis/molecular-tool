@@ -6,6 +6,13 @@ One JSON object per line, in both directions:
     request   {"id": "7", "method": "runMolecularDiagnosis", "params": {...}}
     success   {"id": "7", "ok": true,  "result": {...}}
     failure   {"id": "7", "ok": false, "error": {"code": "...", "message": "..."}}
+    progress  {"id": "7", "type": "progress", "progress": {...}}
+
+A PROGRESS line may appear any number of times between a request and its
+response, and never in place of one. It carries no `ok`, so a reader that only
+knows about requests and responses cannot mistake it for either: the framing is
+unchanged, one JSON object per line, and the pending request stays pending
+until its `ok` arrives.
 
 Everything crossing this boundary is plain JSON-serializable data. No Python
 objects, no pickling, no knowledge of Electron on this side and no knowledge of
@@ -28,6 +35,7 @@ __all__ = [
     "Request",
     "decode_request",
     "encode_failure",
+    "encode_progress",
     "encode_success",
     "resume_state_from_payload",
     "resume_state_to_payload",
@@ -83,6 +91,21 @@ def decode_request(line: str) -> Request:
 
 def encode_success(request_id: str, result: Any) -> str:
     return json.dumps({"id": request_id, "ok": True, "result": result}, ensure_ascii=False)
+
+
+def encode_progress(request_id: str, progress: dict[str, Any]) -> str:
+    """
+    One progress notification for a request that is still running.
+
+    `type` marks it and there is no `ok` field, so this can never be read as a
+    response. The payload is plain numbers and stage names; the wording of what
+    the user sees belongs to the renderer.
+    """
+    return json.dumps(
+        {"id": request_id, "type": "progress", "progress": progress},
+        ensure_ascii=False,
+        default=str,
+    )
 
 
 def encode_failure(request_id: str, error: ServiceError) -> str:

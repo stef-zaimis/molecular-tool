@@ -1,7 +1,7 @@
 # REPO_MAP.md
 
 Map of `molecular-tool`, branch `feature/ui-revamp`.
-Last updated 2026-08-22, after the UI correction pass.
+Last updated 2026-08-22, after the run-observability pass (section 14).
 
 The repository is three layers, not one:
 
@@ -42,6 +42,7 @@ Conventions used below:
 | `molecular_diagnosis/models.py` | 81 | Frozen dataclasses: `DMCResult`, `FiveSiteResult`, `PunishmentEvent`, `PunishmentResult`, `PunishmentPipelineResult`, `PipelineResult`. | **LIVE** |
 | `molecular_diagnosis/utils.py` | 26 | `next_available_filename` - non-clobbering output naming (`name(2).txt`). | **LIVE** |
 | `molecular_diagnosis/fasta_io.py` | 68 | FASTA parsing, aligned-length validation, focal/non-focal header split. | **LIVE** |
+| `molecular_diagnosis/progress.py` | 233 | **Observation hooks.** `RunObserver` (a no-op base class), the stage-name vocabulary that crosses the process boundary, `ProgressTicker` (throttled reporting for million-iteration loops), and `describe_path`. Imports nothing, so the science can report without knowing what a service is. | **LIVE** |
 | `molecular_diagnosis/focal.py` | 177 | **The single focal matcher.** Case-sensitive substring containment, OR across selectors, selectors trimmed and deduplicated, empty selector refused. The four places that once wrote `target_string in header` by hand all route through it. | **LIVE** |
 | `molecular_diagnosis/core.py` | 519 | DMC search: site scoring, focal consensus per column, candidate filtering, n-site combination search, 5-site optimisation, formatting. | **LIVE** |
 | `molecular_diagnosis/punishments.py` | 508 | Focal-only punishment/anomaly scoring (POLY / BAL / PRL / INS / EW / BD). | **LIVE** |
@@ -77,7 +78,8 @@ process holds no project state; this package owns the database exclusively.
 |---|---|---|
 | `molecular_diagnosis/service/__init__.py` | 15 | Package docstring and exports. |
 | `molecular_diagnosis/service/__main__.py` | 71 | `python -m molecular_diagnosis.service`: the stdio loop Electron spawns. Redirects `sys.stdout` to stderr so a stray `print` cannot corrupt the protocol. |
-| `molecular_diagnosis/service/protocol.py` | 192 | Newline-delimited JSON framing. |
+| `molecular_diagnosis/service/protocol.py` | 199 | Newline-delimited JSON framing: requests, responses, and progress notifications. |
+| `molecular_diagnosis/service/diagnostics.py` | 330 | Run diagnostics (structured stderr lines, environment snapshot, run ids) and `ProgressChannel`, which turns an observer's progress into a protocol envelope for the request in flight. |
 | `molecular_diagnosis/service/errors.py` | 200 | `ServiceError` and the error codes the UI writes sentences for. |
 | `molecular_diagnosis/service/handlers.py` | 435 | `METHODS` and `dispatch`. Non-project methods: `ping`, `loadFasta`, `validateFocalStrings`, `runMolecularDiagnosis`, `runSequencePunishment`. |
 | `molecular_diagnosis/service/projects.py` | 508 | `PROJECT_METHODS` - the 28 `project.*` methods (listed in section 3d). |
@@ -944,7 +946,7 @@ The punishment run takes **no** tunables at all: `run_punishment_core` (`pipelin
 
 ## 9. TESTS AND DATA
 
-### Python: 288 tests, all passing
+### Python: 315 tests, all passing
 
 Collected under `pyproject.toml`'s `testpaths = ["tests"]`.
 
@@ -962,6 +964,8 @@ Collected under `pyproject.toml`'s `testpaths = ["tests"]`.
 | `tests/test_project_draft_api.py` | 29 | `saveFocalSet`, presence, `resolveFocalAddQuery`, `matchFocalHeaders` - the calls the working-draft UI is built on. |
 | `tests/test_project_rpc.py` | 41 | The `project.*` methods through `dispatch`, including refusals and their codes. |
 | `tests/test_service.py` | 32 | Protocol framing, error mapping, and a real stdio subprocess proving stdout stays protocol-only. |
+| `tests/test_progress.py` | 17 | Observability: progress does not disturb the request/response framing, several notifications arrive before the response, each is tagged with its run and request, an observed run produces identical science, the ticker throttles, and a refusal names the stage it happened in. |
+| `tests/test_multi_fasta_scope.py` | 10 | What All-files ACTUALLY does with overlapping files today (section 15). Documentation, not endorsement. |
 
 `tests/parity_driver.py` (233 lines) is a helper, not a test file.
 
@@ -973,7 +977,7 @@ Still not covered by any Python test: `punishments.py`, `sequence_subsets.py`,
 `excel.py` and `reports.py` beyond what parity exercises, and both Tkinter
 viewers.
 
-### Desktop: 230 tests, all passing
+### Desktop: 238 tests, all passing
 
 `npm test` in `desktop/` (Vitest, jsdom). `vitest.setup.ts` stubs the two
 `Range` geometry methods CodeMirror calls, because jsdom has no layout engine.
@@ -992,6 +996,7 @@ viewers.
 | `src/backend/backendContract.test.ts` | 12 | The shapes that cross the process boundary. |
 | `src/app/state/typingBurst.test.tsx` | 9 | Fake-timer proof of undo granularity: rapid typing is one step, a pause starts another, one Undo takes back only the most recent burst, and the timer never rewrites the document. |
 | `src/app/uiScale.test.ts` | 6 | 1 at 1920, 0.8 at 1536, never magnifying, and a floor. |
+| `src/app/runProgress.test.tsx` | 7 | The live status line, run-token correlation (stale and post-run notifications ignored), the clock that advances without progress, and a dead backend clearing the running state. |
 
 ### Sample / test FASTA files
 
@@ -1198,3 +1203,166 @@ Why high-risk untested: the grouping is order-dependent greedy containment (§4.
 Pin: not exact output, but invariants — the run completes; `len(dmc.unique)`; `total_combinations_tested`; `stop_reason`; the number of PRL/INS columns (88 at present); the number of sites skipped by the ambiguity veto (243 at present); and a wall-clock ceiling.
 Input needed: `input/Leptacis_allSequences-BOLD-09March2026_aln.fasta` with `target_string="Leptacis_tipulae"` — currently gitignored, so it needs either un-ignoring, a Git LFS entry, or a fixture that skips when absent.
 Why high-risk untested: this is the only thing that would catch risk 4 — the 5-site combinatorial cliff. Nothing today measures how long a real run takes, so a filter change that turns 30 seconds into 30 minutes would ship unnoticed.
+
+## 14. RUN OBSERVABILITY
+
+Added because a run on another machine could sit in "running" indefinitely with
+no way to tell a hang from an expensive search. Nothing about the science
+changed; what changed is that it now says what it is doing.
+
+### Two channels, two audiences
+
+| Channel | Who reads it | What it carries |
+|---|---|---|
+| **stderr**, one JSON object per line behind `[mdx]` | developers | run id, elapsed ms, stage, durations, counts, environment, tracebacks |
+| **the protocol channel**, `{"id", "type":"progress", "progress":{...}}` | the UI | stage name plus numbers, correlated with the pending request |
+
+stdout remains protocol-only. A progress line carries `type` and no `ok`, so it
+cannot be confused with a response, and it leaves its request PENDING — which
+is the point. `tests/test_progress.py` pins that framing.
+
+**A parent that pipes stderr MUST drain it.** The service writes diagnostics for
+every request; an undrained pipe fills at 64 KB and the child then blocks
+mid-write and never answers, which looks exactly like a hung analysis. The
+Electron bridge reads it line by line, and the two test clients run a drain
+thread for the same reason.
+
+### What is instrumented
+
+`project.runMolecularDiagnosis` end to end:
+
+request received and its parameters; the environment (interpreter, version,
+platform, PID, package versions, cwd, repo root); per-file source status with
+path/size/mtime/permissions; the read-and-hash of each alignment; record counts
+and alignment dimensions; focal-entry validation; the pooled scope's size and
+its problems; the focal/non-focal split; the focal consensus; the DMC search,
+with `C(n,k)` announced per size and periodic counts inside it; the number of
+candidate and unique sites; the five-site search, with its `C(n,5)` total and
+periodic counts; output-path allocation; each of the three writers; completion;
+and any refusal or exception, with the stage it happened in.
+
+### Cost of being observable
+
+`ProgressTicker.advance()` is a counter increment and a comparison; it consults
+the clock every few thousand iterations and emits at most once a second. The
+default observer everywhere is `NULL_OBSERVER`, whose methods are empty, so a
+direct `run_pipeline_core` call (the Tkinter app, every existing test) is
+unchanged. `tests/test_progress.py::test_an_observed_run_produces_identical_science`
+compares an observed run against an unobserved one field by field.
+
+### Where the time actually goes
+
+Measured on `input/Leptacis_allSequences-BOLD-09March2026_aln.fasta`
+(2,354 records, 736 columns, focal `Leptacis_tipulae` = 364 sequences,
+1,990 contrast sequences):
+
+| Stage | Cost |
+|---|---|
+| parse + validate | 0.02 s |
+| DMC search, max size 2 (the default) | 0.94 s — 118 candidate sites, **0 unique sites**, stops with `reached_maximum_length` |
+| DMC search, max size 3 | 4.94 s — 273,937 combinations tested, 8 unique sites |
+| five-site search | trivial here (`C(8,5)` = 56) |
+
+The two cliffs, both `C(n, k)` with a per-combination cost proportional to the
+contrast set:
+
+* **the DMC combination search.** 18 µs per combination on this data, so
+  `C(118,4)` ≈ 7.7 M is ~2 minutes, `C(118,5)` ≈ 175 M is ~53 minutes, and
+  `C(118,6)` ≈ 3.3 G is ~16 hours. A user who raises the maximum candidate
+  size, or who keeps accepting the continuation prompt, walks straight into it.
+* **the five-site optimisation.** `C(n,5)` where n is the number of unique
+  diagnostic sites, each iteration comparing the reference against every
+  non-focal sequence. 30 unique sites is 142,506 combinations — 14 s against 45
+  sequences, and roughly 40x that against 1,990.
+
+Both now announce their totals before they start and report progress while they
+run, so the UI can distinguish "working" from "stuck". Neither algorithm was
+changed.
+
+### Collecting comparable logs from two machines
+
+1. `MOLECULAR_TOOL_LOG_DIR=/some/dir npm start` in `desktop/` — every backend
+   line is appended to `backend-YYYY-MM-DD.log` there (default:
+   `<userData>/logs`).
+2. Or drive the service directly, which needs no Electron:
+
+   ```
+   echo '{"id":"1","method":"diagnostics.environment"}' | python -m molecular_diagnosis.service
+   ```
+
+   The `service.start` line and the response both carry the full environment.
+3. Compare `service.start`, then `run.start`, then the `stage.end:*` durations.
+   The first line that differs is the answer.
+
+---
+
+## 15. MULTI-FASTA SCOPE: WHAT "ALL FILES" DOES TODAY
+
+Findings, not a design. The overlapping-FASTA rules are an open question; this
+section records what the implementation currently does so the decision can be
+made against the code. `tests/test_multi_fasta_scope.py` holds the same facts
+as executable tests.
+
+### The reported failure
+
+File A is a full alignment; File B is the focal-only subset of it. Under
+All files the run is **refused** with `DUPLICATE_HEADER_ACROSS_FILES`:
+
+    The header 'Leptacis_tipulae_1' appears in more than one selected file.
+    detail: full.fasta and subset.fasta; (+N more)
+
+`build_scope` (`project/service.py`) records **one problem per shared header**,
+and `run_molecular_diagnosis` refuses on the first. Since every header of a
+subset is by definition also in the superset, the refusal is guaranteed for
+this shape of input. It is not a crash and not a silent wrong answer — it is
+the deliberate refusal added when multi-file scope was built, meeting a case it
+was not designed around.
+
+### How several files are actually combined
+
+* Files are pooled **in memory** into ONE `header -> sequence` dictionary, in
+  selection order. No temporary combined FASTA is written and nothing is
+  re-parsed; the per-file alignment cache is merged directly.
+* There are **no record ids**. The scientific core is keyed by header, so a
+  header is the only identity a sequence has.
+* Each file is validated **independently before pooling**: unreadable, empty,
+  unaligned, or containing repeated headers within itself
+  (`DUPLICATE_HEADER_IN_FILE`) removes that file from the run entirely, and the
+  other files still pool.
+* After pooling, the files must share ONE alignment length, or
+  `INCOMPATIBLE_ALIGNMENT_LENGTHS`.
+
+### Duplicate headers, precisely
+
+| Case | Current behaviour |
+|---|---|
+| Same header twice **in one file** | The file is refused (`DUPLICATE_HEADER_IN_FILE`). The indexer keeps the LAST record for a repeated header, so the count of records and the count of distinct headers differ, and analysing it would silently discard sequences. |
+| Same header in **two selected files**, identical sequence | Refused (`DUPLICATE_HEADER_ACROSS_FILES`). |
+| Same header in **two selected files**, different sequence | Refused with the SAME code. |
+
+**No sequence comparison happens.** "The same record twice" and "two different
+records under one name" are not currently distinguished — the check is purely
+on the header. That is the distinction the next pass has to decide about.
+
+Underneath the refusal, the pooling itself is **first-wins**: the first selected
+file's record is kept and the later one is skipped (the skip is what becomes the
+problem). Selecting the files in the other order would keep the other record.
+That order-dependence is exactly why the run is refused rather than allowed
+through.
+
+### What is NOT broken
+
+The established All-files UI semantics still hold and are covered by tests:
+presence is green when a header is in ANY selected file, orange cannot occur
+under All files (there is no "elsewhere" when everything is selected), `+`
+searches the union of the scope, and a multi-file run over files with **no**
+shared headers works normally.
+
+### The one narrow fix made here
+
+The refusal's `detail` used to be every problem's detail joined together — with
+a real alignment, hundreds of near-identical sentences in the message the UI
+shows. It is now capped at eight with a `(+N more)` count
+(`summarise_problems`). No policy changed.
+
+---

@@ -31,6 +31,14 @@ from molecular_diagnosis.project.paths import display_name_for, normalise_path_k
 from molecular_diagnosis.project.repository import FastaFileRow, FocalSetRow, Repository
 from molecular_diagnosis.project.search import resolve_headers, search_headers
 from molecular_diagnosis.project.sources import SourceState, SourceStatus, SourceVerifier, hash_file
+from molecular_diagnosis.progress import (
+    NULL_OBSERVER,
+    STAGE_LOADING_ALIGNMENT,
+    STAGE_VALIDATING_FOCAL,
+    STAGE_VERIFYING_SOURCES,
+    RunObserver,
+    describe_path,
+)
 
 __all__ = [
     "AnalysisScope",
@@ -39,6 +47,7 @@ __all__ = [
     "ScopeProblem",
     "dedupe_headers",
     "parse_focal_text",
+    "summarise_problems",
 ]
 
 PROJECT_DB_NAME = "project.sqlite"
@@ -160,6 +169,24 @@ class ScopeProblem:
 
     def to_payload(self) -> dict[str, object]:
         return {"code": self.code, "message": self.message, "detail": self.detail}
+
+
+def summarise_problems(problems: Sequence[ScopeProblem], limit: int = 8) -> str | None:
+    """
+    A refusal's detail, capped.
+
+    Two overlapping FASTAs produce one problem PER SHARED HEADER — with a real
+    alignment that is hundreds of near-identical sentences, and the whole lot
+    used to be joined into one string and handed to the UI. The cap keeps the
+    message readable and says how many were left out; the code and the count
+    are what the user needs, not every repetition.
+    """
+    details = [problem.detail for problem in problems if problem.detail]
+    if not details:
+        return None
+    if len(details) <= limit:
+        return "; ".join(details)
+    return "; ".join(details[:limit]) + f"; (+{len(details) - limit} more)"
 
 
 @dataclass
@@ -1083,7 +1110,9 @@ class ProjectService:
     # Alignments and analysis scope
     # ------------------------------------------------------------------
 
-    def load_alignment(self, file_id: str) -> CachedAlignment:
+    def load_alignment(
+        self, file_id: str, observer: RunObserver = NULL_OBSERVER
+    ) -> CachedAlignment:
         """
         A verified, parsed alignment, reusing the session cache when possible.
 
@@ -1092,6 +1121,14 @@ class ProjectService:
         """
         row = self._require_file(file_id)
         status = self.verifier.cheap_status(row)
+        observer.event(
+            "source.status",
+            file=row.display_name,
+            state=str(status.state),
+            available=status.available,
+            indexUsable=status.index_usable,
+            path=describe_path(row.source_path),
+        )
 
         if status.state in (SourceState.MISSING, SourceState.UNREADABLE):
             raise ProjectError(
@@ -1106,7 +1143,10 @@ class ProjectService:
                 return cached
 
         # The bytes are needed anyway, so this read also verifies the file.
-        scan = self._stable_scan(row)
+        # On a large alignment this is the read AND the SHA-256, so it is worth
+        # its own bracket: a slow disk or a network mount shows up right here.
+        with observer.stage(STAGE_LOADING_ALIGNMENT, file=row.display_name):
+            scan = self._stable_scan(row)
         if not scan.sequences:
             raise ProjectError("FASTA_EMPTY", f"{row.display_name} contains no sequences.")
         if scan.alignment_length is None:
@@ -1114,6 +1154,15 @@ class ProjectService:
                 "FASTA_NOT_ALIGNED",
                 f"{row.display_name} is not an aligned FASTA.",
             )
+
+        observer.event(
+            "source.scanned",
+            file=row.display_name,
+            records=len(scan.sequences),
+            alignmentLength=scan.alignment_length,
+            duplicateHeaders=scan.duplicate_header_count,
+            reindexed=scan.sha256 != row.indexed_sha256,
+        )
 
         if scan.sha256 != row.indexed_sha256:
             # Content genuinely changed: refresh the snapshot from this scan
@@ -1134,7 +1183,9 @@ class ProjectService:
         self.verifier.note_scan(file_id, scan, matched_index=True)
         return self.alignments.put(file_id, row.index_revision, scan)
 
-    def build_scope(self, fasta_file_ids: list[str]) -> AnalysisScope:
+    def build_scope(
+        self, fasta_file_ids: list[str], observer: RunObserver = NULL_OBSERVER
+    ) -> AnalysisScope:
         """
         Combine verified alignments in memory for a multi-file run.
 
@@ -1146,13 +1197,15 @@ class ProjectService:
         owner: dict[str, str] = {}
         lengths: dict[str, int] = {}
 
-        for file_id in fasta_file_ids:
+        total_files = len(fasta_file_ids)
+        for index, file_id in enumerate(fasta_file_ids, start=1):
+            observer.progress(STAGE_VERIFYING_SOURCES, current=index, total=total_files)
             row = self.repository.get_fasta_file(file_id)
             if row is None:
                 problems.append(ScopeProblem("UNKNOWN_FILE", "A selected file is not in this project."))
                 continue
             try:
-                alignment = self.load_alignment(file_id)
+                alignment = self.load_alignment(file_id, observer)
             except ProjectError as error:
                 problems.append(ScopeProblem(error.code, error.message, error.detail))
                 continue
@@ -1302,6 +1355,7 @@ class ProjectService:
         single_file: bool,
         options: dict[str, object],
         resume: dict[str, object] | None = None,
+        observer: RunObserver = NULL_OBSERVER,
     ) -> dict[str, object]:
         """
         Run the pipeline over a project scope with EXACT focal membership.
@@ -1317,6 +1371,17 @@ class ProjectService:
         from molecular_diagnosis.service.protocol import (
             resume_state_from_payload,
             resume_state_to_payload,
+        )
+
+        observer.event(
+            "run.request",
+            focalSetId=focal_set_id,
+            files=len(fasta_file_ids),
+            singleFile=single_file,
+            options=dict(options),
+            resuming=resume is not None,
+            projectDir=str(self.project_dir),
+            outputsDir=describe_path(self.outputs_dir),
         )
 
         if not fasta_file_ids:
@@ -1335,22 +1400,33 @@ class ProjectService:
                 "SCOPE_MISMATCH", "A single-file run must select exactly one file."
             )
 
-        self.require_focal_completeness(
-            focal_set_id, list(fasta_file_ids), single_file=single_file
-        )
-
-        scope = self.build_scope(fasta_file_ids)
-        if not scope.ok:
-            first = scope.problems[0]
-            raise ProjectError(
-                first.code,
-                first.message,
-                detail="; ".join(
-                    filter(None, [problem.detail for problem in scope.problems])
-                ) or None,
+        with observer.stage(STAGE_VALIDATING_FOCAL, entries=len(selector)):
+            observer.progress(STAGE_VALIDATING_FOCAL, total=len(selector))
+            self.require_focal_completeness(
+                focal_set_id, list(fasta_file_ids), single_file=single_file
             )
 
+        with observer.stage(STAGE_VERIFYING_SOURCES, files=len(fasta_file_ids)):
+            observer.progress(STAGE_VERIFYING_SOURCES, current=0, total=len(fasta_file_ids))
+            scope = self.build_scope(fasta_file_ids, observer)
+
+        observer.event(
+            "scope.built",
+            sequences=len(scope.sequences),
+            alignmentLength=scope.alignment_length,
+            problems=[problem.code for problem in scope.problems],
+        )
+
+        if not scope.ok:
+            first = scope.problems[0]
+            raise ProjectError(first.code, first.message, detail=summarise_problems(scope.problems))
+
         focal_headers, non_focal_headers = partition_headers(list(scope.sequences), selector)
+        observer.event(
+            "scope.partitioned",
+            focal=len(focal_headers),
+            nonFocal=len(non_focal_headers),
+        )
         if not focal_headers:
             raise ProjectError(
                 "FOCAL_NO_MATCH", "No sequence in the selected scope matches the focal set."
@@ -1374,6 +1450,7 @@ class ProjectService:
         ]
 
         result = run_pipeline_on_sequences(
+            observer=observer,
             sequences=scope.sequences,
             selectors=selector,
             focal_headers=focal_headers,
@@ -1391,6 +1468,13 @@ class ProjectService:
         )
 
         dmc = result.dmc
+        observer.event(
+            "run.complete",
+            sequences=len(scope.sequences),
+            uniqueSites=len(dmc.unique),
+            stopReason=dmc.stop_reason,
+            report=str(result.txt_output_path),
+        )
         can_continue = dmc.stop_reason == "reached_maximum_length"
         return {
             "focalSetId": focal_set_id,

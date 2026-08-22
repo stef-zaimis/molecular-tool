@@ -59,6 +59,18 @@ The legacy Tkinter UI is still runnable and has no project database:
 python main.py
 ```
 
+## Diagnostics
+
+The backend writes structured diagnostics to stderr for every request, and the
+desktop app appends them to `<userData>/logs/backend-YYYY-MM-DD.log`. Set
+`MOLECULAR_TOOL_LOG_DIR` to write them somewhere else.
+
+To compare two machines without reproducing a failure first:
+
+```bash
+echo '{"id":"1","method":"diagnostics.environment"}' | python -m molecular_diagnosis.service
+```
+
 ## Tests
 
 ```bash

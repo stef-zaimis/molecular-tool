@@ -20,6 +20,13 @@ from molecular_diagnosis.project.service import (
     ProjectService,
     validate_fasta_candidate,
 )
+from molecular_diagnosis.progress import STAGE_STARTING
+from molecular_diagnosis.service.diagnostics import (
+    RunDiagnostics,
+    environment_snapshot,
+    log_line,
+    new_run_id,
+)
 from molecular_diagnosis.service.errors import ErrorCode, ServiceError
 
 __all__ = ["PROJECT_METHODS", "close_open_project", "current_project"]
@@ -459,25 +466,79 @@ def focal_presence(params: dict[str, Any]) -> dict[str, Any]:
 
 
 def run_project_molecular_diagnosis(params: dict[str, Any]) -> dict[str, Any]:
+    """
+    The one long-running method, and therefore the instrumented one.
+
+    Every run gets a short id that appears in each of its diagnostic lines, so
+    a log holding several runs can still be read. `runToken` is the CALLER's
+    correlation id: the renderer mints it, it comes back on every progress
+    notification, and that is how the UI knows a late notification belongs to a
+    run it has already replaced.
+    """
     project = current_project()
     set_id = _require_str(params, "focalSetId")
     file_ids = _require_ids(params, "fastaFileIds")
     single = bool(params.get("singleFile", len(file_ids) == 1))
     options = params.get("options")
     resume = params.get("resume")
+    token = params.get("runToken")
 
-    return _guard(
-        lambda: project.run_molecular_diagnosis(
-            focal_set_id=set_id,
-            fasta_file_ids=file_ids,
-            single_file=single,
-            options=options if isinstance(options, dict) else {},
-            resume=resume if isinstance(resume, dict) else None,
-        )
+    run = RunDiagnostics(new_run_id(), run_token=token if isinstance(token, str) else None)
+    log_line(
+        "run.start",
+        run=run.run_id,
+        runToken=run.run_token,
+        focalSetId=set_id,
+        fastaFileIds=file_ids,
+        singleFile=single,
+        environment=environment_snapshot(),
     )
+    run.progress(STAGE_STARTING)
+
+    try:
+        result = _guard(
+            lambda: project.run_molecular_diagnosis(
+                focal_set_id=set_id,
+                fasta_file_ids=file_ids,
+                single_file=single,
+                options=options if isinstance(options, dict) else {},
+                resume=resume if isinstance(resume, dict) else None,
+                observer=run,
+            )
+        )
+    except ServiceError as error:
+        # An expected refusal: the code and the stage it happened in, no
+        # traceback. The stage is the part that is hard to guess afterwards.
+        log_line(
+            "run.refused",
+            run=run.run_id,
+            stage=run.last_stage,
+            code=str(error.code),
+            message=error.message,
+            elapsedMs=run.elapsed_ms,
+        )
+        raise
+    except BaseException as error:
+        run.failure(error)
+        raise
+
+    log_line("run.end", run=run.run_id, ok=True, elapsedMs=run.elapsed_ms)
+    return result
+
+
+def diagnostics_environment(_params: dict[str, Any]) -> dict[str, Any]:
+    """
+    The environment this service is actually running in.
+
+    Exists so two machines can be compared without having to reproduce a
+    failure first: run it from a terminal (see REPO_MAP section 14) and diff
+    the two answers.
+    """
+    return {"environment": environment_snapshot()}
 
 
 PROJECT_METHODS = {
+    "diagnostics.environment": diagnostics_environment,
     "project.create": create_project,
     "project.open": open_project,
     "project.close": close_project,

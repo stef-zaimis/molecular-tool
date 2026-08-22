@@ -1,4 +1,5 @@
 from itertools import combinations
+from math import comb
 
 from molecular_diagnosis.constants import (
     BALANCING_EMPTY_LIMIT,
@@ -11,6 +12,13 @@ from molecular_diagnosis.focal import (
     normalise_focal_strings,
 )
 from molecular_diagnosis.models import DMCResult, FiveSiteResult
+from molecular_diagnosis.progress import (
+    NULL_OBSERVER,
+    STAGE_DMC_SEARCH,
+    STAGE_FIVE_SITE,
+    ProgressTicker,
+    RunObserver,
+)
 
 
 def state_possibilities(state: str) -> set[str]:
@@ -203,6 +211,7 @@ def find_dmc_information(
     start_combination_length: int = 1,
     initial_diagnostic_combinations: list[tuple[int, ...]] | None = None,
     initial_combinations_tested_by_length: dict[int, int] | None = None,
+    observer: RunObserver = NULL_OBSERVER,
 ) -> DMCResult:
     if min_combination_length < 1:
         raise ValueError("Minimum combination length must be at least 1.")
@@ -374,7 +383,26 @@ def find_dmc_information(
             combinations_tested_by_length.setdefault(combo_length, 0)
             found_this_length: list[tuple[int, ...]] = []
 
+            # C(n, k) for this size: what the loop below is walking through.
+            # Reported up front so a stage that will take an hour says so at
+            # the start rather than after it.
+            size_total = comb(len(candidate_sites), combo_length)
+            observer.event(
+                "dmc.size.start",
+                size=combo_length,
+                candidate_sites=len(candidate_sites),
+                combinations=size_total,
+            )
+            ticker = ProgressTicker(
+                observer,
+                STAGE_DMC_SEARCH,
+                total=size_total,
+                detail=str(combo_length),
+            )
+
             for combo in combinations(candidate_sites, combo_length):
+                ticker.advance()
+
                 if is_pruned_by_existing_dmc(combo):
                     continue
 
@@ -382,6 +410,14 @@ def find_dmc_information(
 
                 if combination_is_diagnostic(combo):
                     found_this_length.append(combo)
+
+            ticker.finish()
+            observer.event(
+                "dmc.size.end",
+                size=combo_length,
+                tested=combinations_tested_by_length[combo_length],
+                found=len(found_this_length),
+            )
 
             for combo in found_this_length:
                 if combo not in seen_diagnostic_combinations:
@@ -459,7 +495,21 @@ def find_best_five_site_sets(
     sites: list[int],
     focal_strings: FocalSelector,
     diagnostic_states: dict[int, str] | None = None,
+    observer: RunObserver = NULL_OBSERVER,
 ) -> FiveSiteResult:
+    """
+    Exhaustive best-of-`C(n, 5)` search.
+
+    THE combinatorial cliff in this codebase, and the reason this function
+    reports progress: the loop is `C(n, 5)` iterations and each one compares
+    the reference against every non-focal sequence, so the cost is
+    `C(n, 5) x non-focal count x 5`. Twenty candidate sites is 15,504
+    combinations; forty is 658,008; sixty is 5,461,512. Against a couple of
+    thousand contrast sequences the last of those is not a hang, but it is
+    hours, and without progress it is indistinguishable from one.
+
+    Nothing about the search is changed by observing it.
+    """
     total_combinations_tested = 0
     best_gap_score = None
     best_gap_sites = None
@@ -475,8 +525,18 @@ def find_best_five_site_sets(
             best_avg_sites=None,
         )
 
+    total = comb(len(sites), 5)
+    observer.event(
+        "five_site.start",
+        candidate_sites=len(sites),
+        combinations=total,
+        comparison_sequences=len(sequences),
+    )
+    ticker = ProgressTicker(observer, STAGE_FIVE_SITE, total=total, check_every=256)
+
     for combo in combinations(sites, 5):
         total_combinations_tested += 1
+        ticker.advance()
 
         max_similarity, avg_similarity, similarity_gap = compute_metrics(
             sequences=sequences,
@@ -493,6 +553,9 @@ def find_best_five_site_sets(
         if best_avg_score is None or avg_similarity < best_avg_score:
             best_avg_score = avg_similarity
             best_avg_sites = combo
+
+    ticker.finish()
+    observer.event("five_site.end", tested=total_combinations_tested)
 
     return FiveSiteResult(
         total_combinations_tested=total_combinations_tested,

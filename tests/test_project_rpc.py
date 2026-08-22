@@ -19,6 +19,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -62,18 +63,61 @@ class ServiceClient:
             bufsize=1,
         )
         self._counter = 0
+        #: Every progress notification seen, in arrival order.
+        self.progress: list[dict] = []
+        # stderr MUST be drained continuously.
+        #
+        # The service writes structured diagnostics there for every request. A
+        # parent that pipes stderr and does not read it fills the OS pipe
+        # buffer (64 KB), at which point the child blocks mid-write and never
+        # answers on stdout — a deadlock that looks exactly like a hung
+        # analysis. Electron's bridge reads it line by line for the same
+        # reason; this thread is that, for tests.
+        self._stderr: list[str] = []
+        self._pump = threading.Thread(target=self._drain_stderr, daemon=True)
+        self._pump.start()
         ready = json.loads(self.proc.stdout.readline())
         assert ready["id"] == "ready" and ready["ok"], ready
 
+    def _drain_stderr(self) -> None:
+        for line in self.proc.stderr:
+            self._stderr.append(line.rstrip())
+
+    @property
+    def diagnostics(self) -> list[str]:
+        """Every stderr line the service has produced so far."""
+        return list(self._stderr)
+
     def call(self, method: str, params: dict | None = None) -> dict:
+        """
+        Send one request and return its RESPONSE.
+
+        Progress notifications for the same request may arrive first, any
+        number of them. They are collected rather than returned: a response is
+        the line carrying `ok`, and a progress line carries `type` instead, so
+        neither can be mistaken for the other. This is the same rule the
+        Electron bridge follows.
+        """
         self._counter += 1
         request = {"id": str(self._counter), "method": method, "params": params or {}}
         self.proc.stdin.write(json.dumps(request) + "\n")
         self.proc.stdin.flush()
-        line = self.proc.stdout.readline()
-        if not line:
-            raise AssertionError("the service closed stdout:\n" + self.proc.stderr.read())
-        return json.loads(line)
+
+        while True:
+            line = self.proc.stdout.readline()
+            if not line:
+                raise AssertionError(
+                    "the service closed stdout:\n" + "\n".join(self._stderr[-20:])
+                )
+            message = json.loads(line)
+            if message.get("type") == "progress":
+                self.progress.append(message)
+                continue
+            return message
+
+    def progress_for(self, request_id: str) -> list[dict]:
+        """Progress notifications recorded for one request id."""
+        return [message for message in self.progress if message["id"] == request_id]
 
     def ok(self, method: str, params: dict | None = None) -> dict:
         response = self.call(method, params)

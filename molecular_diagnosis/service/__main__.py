@@ -21,7 +21,14 @@ from __future__ import annotations
 
 import io
 import sys
+import time
+import traceback
 
+from molecular_diagnosis.service.diagnostics import (
+    CHANNEL,
+    environment_snapshot,
+    log_line,
+)
 from molecular_diagnosis.service.errors import ServiceError, to_service_error
 from molecular_diagnosis.service.handlers import dispatch
 from molecular_diagnosis.service.protocol import (
@@ -45,6 +52,15 @@ def main() -> int:
     # From here on, a stray print() lands in the log rather than the protocol.
     sys.stdout = sys.stderr
 
+    # Progress notifications are written through the SAME private handle as
+    # responses, so they cannot interleave with a half-written response line
+    # and cannot be affected by the stdout swap above.
+    CHANNEL.install(emit)
+
+    # One environment banner per process. This is the line to compare when two
+    # machines behave differently: interpreter, versions, platform, paths.
+    log_line("service.start", environment=environment_snapshot())
+
     emit(encode_success("ready", {"ready": True, "python": sys.version.split()[0]}))
 
     for raw_line in sys.stdin:
@@ -53,17 +69,49 @@ def main() -> int:
             continue
 
         request_id = "unknown"
+        started = time.monotonic()
+        method = "unknown"
         try:
             request = decode_request(line)
             request_id = request.id
-            result = dispatch(request.method, request.params)
+            method = request.method
+            log_line("request.start", id=request_id, method=method)
+            # Progress emitted anywhere inside this dispatch is tagged with
+            # this request's id, which is what lets the parent route it.
+            with CHANNEL.request(request_id):
+                result = dispatch(request.method, request.params)
+            log_line(
+                "request.end",
+                id=request_id,
+                method=method,
+                ok=True,
+                durationMs=int((time.monotonic() - started) * 1000),
+            )
             emit(encode_success(request_id, result))
         except ServiceError as error:
+            log_line(
+                "request.end",
+                id=request_id,
+                method=method,
+                ok=False,
+                code=str(error.code),
+                message=error.message,
+                durationMs=int((time.monotonic() - started) * 1000),
+            )
             emit(encode_failure(request_id, error))
         except Exception as error:  # noqa: BLE001 - boundary must not die
+            log_line(
+                "request.crashed",
+                id=request_id,
+                method=method,
+                error=f"{type(error).__name__}: {error}",
+                traceback=traceback.format_exc(),
+                durationMs=int((time.monotonic() - started) * 1000),
+            )
             # The cause and traceback are preserved inside the ServiceError.
             emit(encode_failure(request_id, to_service_error(error)))
 
+    log_line("service.stop", reason="stdin closed")
     return 0
 
 
