@@ -66,6 +66,13 @@ function makeBackend({ picks = [GOOD], sources = [] }: Options = {}) {
     sources: current,
   });
 
+  /** Listeners registered through `project.onDiagnosisProgress`. */
+  const progressListeners: Array<(progress: unknown) => void> = [];
+  /** Push one progress notification at the renderer, as the backend would. */
+  const emitProgress = (progress: unknown) => {
+    for (const listener of [...progressListeners]) listener(progress);
+  };
+
   const api = {
     window: {
       minimize: vi.fn(),
@@ -165,11 +172,23 @@ function makeBackend({ picks = [GOOD], sources = [] }: Options = {}) {
       headerPresence: () => Promise.resolve(ok({ entries: [] })),
       matchFocalHeaders: vi.fn(),
       runMolecularDiagnosis: vi.fn(),
+      /*
+       * The progress channel. Tests that care drive it through
+       * `backend.emitProgress(...)`; the rest simply need it to exist, because
+       * the provider subscribes to it on mount.
+       */
+      onDiagnosisProgress: (listener: (progress: unknown) => void) => {
+        progressListeners.push(listener);
+        return () => {
+          const index = progressListeners.indexOf(listener);
+          if (index >= 0) progressListeners.splice(index, 1);
+        };
+      },
     },
     projectDialog: { selectDirectory: () => Promise.resolve('/p') },
   };
 
-  return { api, calls, linked, lockCalls };
+  return { api, calls, linked, lockCalls, emitProgress };
 }
 
 let backend: ReturnType<typeof makeBackend>;

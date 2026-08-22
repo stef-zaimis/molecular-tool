@@ -31,10 +31,57 @@ let mainWindow: BrowserWindow | null = null;
  */
 let backend: PythonBridge | null = null;
 
+/**
+ * Where the backend's diagnostics are written.
+ *
+ * Appended to a file as well as the console, because the console only exists
+ * when the app was started from a terminal — and the whole point of these
+ * lines is that someone on another machine can send them to someone else.
+ * `MOLECULAR_TOOL_LOG_DIR` overrides the location.
+ */
+let logStream: fs.WriteStream | null = null;
+let logPath: string | null = null;
+
+function backendLogPath(): string {
+  if (logPath) return logPath;
+  const directory =
+    process.env.MOLECULAR_TOOL_LOG_DIR ?? path.join(app.getPath('userData'), 'logs');
+  fs.mkdirSync(directory, { recursive: true });
+  const day = new Date().toISOString().slice(0, 10);
+  logPath = path.join(directory, `backend-${day}.log`);
+  return logPath;
+}
+
+function writeBackendLog(message: string): void {
+  const line = `${new Date().toISOString()} ${message}`;
+  console.log(`[backend] ${message}`);
+  try {
+    if (!logStream) logStream = fs.createWriteStream(backendLogPath(), { flags: 'a' });
+    logStream.write(`${line}
+`);
+  } catch {
+    // A log that cannot be written must not break the app.
+  }
+}
+
 function getBackend(): PythonBridge {
   if (!backend) {
     const repoRoot = process.env.MOLECULAR_TOOL_ROOT ?? path.resolve(app.getAppPath(), '..');
-    backend = new PythonBridge(repoRoot, (message) => console.log(`[backend] ${message}`));
+    backend = new PythonBridge(repoRoot, writeBackendLog);
+    writeBackendLog(
+      `electron ${process.versions.electron} node ${process.versions.node} ` +
+        `platform ${process.platform} ${process.arch}; repoRoot ${repoRoot}; ` +
+        `appPath ${app.getAppPath()}; log ${backendLogPath()}`,
+    );
+
+    /*
+     * Progress travels main -> renderer as a plain event. It is NOT a reply to
+     * anything: the run's `invoke` promise is still pending and resolves on its
+     * own when the analysis finishes.
+     */
+    backend.setProgressListener((update) => {
+      mainWindow?.webContents.send('analysis:progress', update.progress);
+    });
   }
   return backend;
 }

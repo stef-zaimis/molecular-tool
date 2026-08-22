@@ -438,6 +438,57 @@ export interface ProjectDiagnosisRequest {
     readonly maxCandidateSize: number;
   };
   readonly resume?: DiagnosisResumeState | null;
+  /**
+   * The CALLER's correlation id for this run.
+   *
+   * Minted by the renderer and echoed on every progress notification, which is
+   * how a late notification from a run that has already been replaced is
+   * recognised and dropped. The backend never interprets it.
+   */
+  readonly runToken?: string;
+}
+
+/**
+ * Stages a run can report while it is still running.
+ *
+ * These strings come from `molecular_diagnosis/progress.py`; the two lists have
+ * to agree. `STAGE_LABELS` in DiagnosisRunPanel is an exhaustive record over
+ * this union, so adding a stage on the Python side without giving it wording
+ * here is a compile error rather than a blank status line.
+ */
+export type DiagnosisProgressStage =
+  | 'starting'
+  | 'verifying_sources'
+  | 'loading_alignment'
+  | 'building_scope'
+  | 'validating_focal'
+  | 'consensus'
+  | 'dmc_search'
+  | 'five_site'
+  | 'writing_report'
+  | 'writing_consensus'
+  | 'writing_workbook'
+  | 'finishing';
+
+/**
+ * One live progress notification, arriving while the run's request is still
+ * pending.
+ *
+ * Numbers, not prose: the renderer owns every word the user reads. `current`
+ * and `total` are whatever the stage counts (files verified, combinations
+ * tested); either may be absent for a stage with nothing to count.
+ */
+export interface DiagnosisProgress {
+  /** Backend run id. Appears in the stderr diagnostics for the same run. */
+  readonly runId: string;
+  /** The `runToken` the request carried, when it carried one. */
+  readonly runToken: string | null;
+  readonly stage: DiagnosisProgressStage;
+  readonly current: number | null;
+  readonly total: number | null;
+  /** Stage-specific extra, e.g. the combination size being searched. */
+  readonly detail: string | null;
+  readonly elapsedMs: number;
 }
 
 export interface ProjectDiagnosisResult {

@@ -77,6 +77,13 @@ function makeBackend() {
       return { header, state: present ? 'present_current' : 'missing', occurrences };
     });
 
+  /** Listeners registered through `project.onDiagnosisProgress`. */
+  const progressListeners: Array<(progress: unknown) => void> = [];
+  /** Push one progress notification at the renderer, as the backend would. */
+  const emitProgress = (progress: unknown) => {
+    for (const listener of [...progressListeners]) listener(progress);
+  };
+
   const api = {
     window: {
       minimize: vi.fn(),
@@ -172,13 +179,25 @@ function makeBackend() {
         ),
       ),
       runMolecularDiagnosis: record('runMolecularDiagnosis', vi.fn()),
+      /*
+       * The progress channel. Tests that care drive it through
+       * `backend.emitProgress(...)`; the rest simply need it to exist, because
+       * the provider subscribes to it on mount.
+       */
+      onDiagnosisProgress: (listener: (progress: unknown) => void) => {
+        progressListeners.push(listener);
+        return () => {
+          const index = progressListeners.indexOf(listener);
+          if (index >= 0) progressListeners.splice(index, 1);
+        };
+      },
     },
     projectDialog: {
       selectDirectory: () => Promise.resolve('/projects/leptacis'),
     },
   };
 
-  return { api, calls };
+  return { api, calls, emitProgress };
 }
 
 let backend: ReturnType<typeof makeBackend>;

@@ -26,6 +26,9 @@ written. Behavioural reference for the Python: `REPO_MAP.md` at the repo root.
 >
 > **Pass 10 (interaction corrections)** is §19. Where it disagrees with any
 > earlier section, §19 is what the code does.
+>
+> **Pass 11 (run observability)** is §20: live progress during a run, and the
+> diagnostics behind it.
 
 ---
 
@@ -1121,3 +1124,96 @@ specificity bug was confirmed fixed rather than assumed fixed.
 The real sequence renderer; screen 5 (progress / pause / cancel); PIS
 computation; run-time estimation; FASTA rename; source reordering; the Search
 row under the focal box. All are drawn inert rather than faked.
+
+
+## 20. Run observability (pass 11)
+
+A run could sit on "Running..." with nothing to say for itself. On one machine
+that was fine; on another it looked like a hang. This pass makes a run report
+what it is doing, without changing what it does.
+
+### What the user sees
+
+The existing Run section's status slot, which used to hold one fixed sentence,
+now holds one live line:
+
+    Running — verifying FASTA 1/3 — 00:07
+    Running — DMC search, size 3 — 12,000 / 266,916 — 00:19
+    Running — 5-site optimisation 428,000/2,118,760 — 00:41
+    Running — writing comparison workbook — 01:03
+
+Same typography, same muted colour, same place. Three parts: the state
+(`Running` / `Continuing`), the stage with whatever it counts, and an elapsed
+clock. The clock is driven by a local one-second interval rather than by
+arriving progress, because a stage that reports nothing for a minute is exactly
+when the user needs to see that the app is alive.
+
+**The renderer owns every word.** Python sends a stage NAME and numbers;
+`STAGE_LABELS` in `DiagnosisRunPanel.tsx` is an exhaustive `Record` over the
+`DiagnosisProgressStage` union, so a stage added in `progress.py` and to the
+union cannot compile without wording, and the line can never go blank because
+the two sides drifted.
+
+Not built, deliberately: the deferred progress screen, pause, cancel, and
+runtime estimation. This is a status line, not a progress UI.
+
+### How progress travels
+
+    core/pipeline (RunObserver)
+      -> RunDiagnostics (service/diagnostics.py)
+      -> ProgressChannel -> one JSON line on stdout, tagged with the request id
+      -> PythonBridge routes it by envelope kind, leaving the request PENDING
+      -> main sends 'analysis:progress' to the window
+      -> preload's project.onDiagnosisProgress
+      -> ProjectProvider dispatches 'diagnosisProgress'
+      -> the reducer applies it, IF the token matches the running run
+
+Typed the whole way: `DiagnosisProgress` in `backendContract.ts`. Nothing parses
+stderr, and stderr never reaches React.
+
+**Framing is unchanged.** A progress line carries `type: "progress"` and no
+`ok`; a response carries `ok`. The bridge, and both Python test clients,
+distinguish them by shape rather than by position, so any number of progress
+lines may precede a response.
+
+**Correlation is a token the renderer mints.** `runToken` goes out with the
+request and comes back on every notification. The reducer applies progress only
+when the run is still `running` AND the token matches, which drops both a
+notification that arrives after the run finished and one from a run the user has
+already replaced. The backend also stamps its own short `runId`, which is what
+appears in the stderr log.
+
+### When the backend dies
+
+The bridge already resolved pending requests on child exit; what matters here is
+that the UI acts on it. A `BACKEND_UNAVAILABLE` failure clears the running state
+through the normal `diagnosisFailed` path, shows the message and the exit detail,
+and re-enables the button. There is still NO timeout on a run: a legitimate
+search can take hours, and inventing a deadline would abort real work.
+
+### Developer diagnostics
+
+Structured stderr lines, one JSON object each behind `[mdx]`, carrying the run
+id, elapsed time, stage, durations and counts — plus an environment banner at
+service start and a traceback with the failing stage on a crash. Electron writes
+them to `<userData>/logs/backend-YYYY-MM-DD.log` as well as the console;
+`MOLECULAR_TOOL_LOG_DIR` overrides the directory.
+
+A parent that pipes stderr **must drain it**: the pipe fills at 64 KB and the
+child then blocks mid-write, which looks precisely like the hang this pass
+exists to diagnose. The bridge does; so do the test clients.
+
+### Where the time goes
+
+Measured, not guessed — see REPO_MAP section 14 for the numbers. Both expensive
+stages are `C(n, k)` searches whose per-combination cost scales with the contrast
+set, and both now announce their total before they start. Neither algorithm was
+touched.
+
+### All files with overlapping FASTAs
+
+Investigated, not redesigned: REPO_MAP section 15 records exactly what the
+backend does with a full alignment plus its focal subset (refused, one problem
+per shared header, no sequence comparison, first-file-wins pooling underneath).
+The only change made was capping the refusal's detail, which used to concatenate
+one sentence per duplicate into the message this UI displays.

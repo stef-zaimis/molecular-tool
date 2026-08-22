@@ -60,6 +60,35 @@
   color: var(--c-muted);
 }
 
+/*
+ * The live line: "Running — 5-site optimisation 428,000/2,118,760 — 00:41".
+ *
+ * Same typography as the resting status it replaces; the separators are drawn
+ * with ::before so the three parts stay separate elements and the numbers can
+ * be tabular without the words being.
+ */
+.run-panel__status--running {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.run-panel__progress-state {
+  color: var(--c-text);
+}
+
+.run-panel__progress-stage::before,
+.run-panel__progress-clock::before {
+  content: '—';
+  margin-right: 8px;
+  color: var(--c-muted);
+}
+
+/* A count that changes every second must not shuffle the line's width. */
+.run-panel__progress-clock {
+  font-variant-numeric: tabular-nums;
+}
+
 .run-panel__result {
   padding: 12px 16px;
   background: var(--c-surface);

@@ -1,6 +1,7 @@
 import type { AnalysisKind, AnalysisSelection, MolecularDiagnosisConfig } from '../../contract';
 import type {
   BackendError,
+  DiagnosisProgress,
   DiagnosisResumeState,
   FastaCandidate,
   FocalSetPayload,
@@ -132,7 +133,20 @@ export interface FocalPresenceState {
 /** A Molecular Diagnosis run over the project scope, including the continuation offer. */
 export type DiagnosisRunState =
   | { readonly status: 'idle' }
-  | { readonly status: 'running'; readonly continuing: boolean }
+  | {
+      readonly status: 'running';
+      readonly continuing: boolean;
+      /**
+       * This run's correlation id, sent with the request and echoed on every
+       * progress notification. Progress carrying a different token belongs to
+       * a run that has already been replaced and is ignored.
+       */
+      readonly runToken: string;
+      /** When the renderer started it, for the elapsed clock. */
+      readonly startedAt: number;
+      /** The most recent progress notification, or null before the first. */
+      readonly progress: DiagnosisProgress | null;
+    }
   | {
       readonly status: 'succeeded';
       readonly result: ProjectDiagnosisResult;
@@ -384,7 +398,8 @@ export type AppAction =
   /* scope --------------------------------------------------------------- */
   | { type: 'setFastaScope'; scope: FastaScope }
   /* run ----------------------------------------------------------------- */
-  | { type: 'diagnosisStarted'; continuing: boolean }
+  | { type: 'diagnosisStarted'; continuing: boolean; runToken: string; startedAt: number }
+  | { type: 'diagnosisProgress'; progress: DiagnosisProgress }
   | { type: 'diagnosisSucceeded'; result: ProjectDiagnosisResult }
   | { type: 'diagnosisFailed'; error: BackendError }
   | { type: 'dismissContinuation' }
@@ -798,7 +813,31 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     /* ---------------------------------------------------------------- */
 
     case 'diagnosisStarted':
-      return { ...state, diagnosisRun: { status: 'running', continuing: action.continuing } };
+      return {
+        ...state,
+        diagnosisRun: {
+          status: 'running',
+          continuing: action.continuing,
+          runToken: action.runToken,
+          startedAt: action.startedAt,
+          progress: null,
+        },
+      };
+
+    case 'diagnosisProgress': {
+      /*
+       * Progress is only ever applied to the run it belongs to.
+       *
+       * A notification can arrive after its run finished (the response and the
+       * last progress line race), or after the user started a second run. Both
+       * are dropped: the token has to match the run currently in flight, and
+       * there has to be one.
+       */
+      const run = state.diagnosisRun;
+      if (run.status !== 'running') return state;
+      if (action.progress.runToken !== run.runToken) return state;
+      return { ...state, diagnosisRun: { ...run, progress: action.progress } };
+    }
 
     case 'diagnosisSucceeded':
       return {

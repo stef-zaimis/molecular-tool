@@ -73,6 +73,8 @@ const noopApi: DesktopApi = {
     removeFocalEntries: () => Promise.resolve(unavailable),
     focalPresence: () => Promise.resolve(unavailable),
     runMolecularDiagnosis: () => Promise.resolve(unavailable),
+    // No backend, so no progress will ever arrive; unsubscribing is a no-op.
+    onDiagnosisProgress: () => () => undefined,
   },
   projectDialog: {
     selectDirectory: () => Promise.resolve(null),

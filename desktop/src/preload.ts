@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type {
   BackendResult,
+  DiagnosisProgress,
   FastaCandidate,
   FastaLoadResult,
   FocalPresencePayload,
@@ -321,6 +322,19 @@ const desktopApi = {
       request: ProjectDiagnosisRequest,
     ): Promise<BackendResult<ProjectDiagnosisResult>> =>
       ipcRenderer.invoke('project:run-molecular-diagnosis', request),
+
+    /**
+     * Live progress from a run that is still going.
+     *
+     * A separate event, not a resolution of the request above: the run's
+     * promise stays pending until the analysis finishes or fails. Returns an
+     * unsubscribe function.
+     */
+    onDiagnosisProgress: (listener: (progress: DiagnosisProgress) => void): (() => void) => {
+      const handler = (_event: unknown, progress: DiagnosisProgress) => listener(progress);
+      ipcRenderer.on('analysis:progress', handler);
+      return () => ipcRenderer.removeListener('analysis:progress', handler);
+    },
   },
 
   /** Pick a project directory to create or open. Null when cancelled. */

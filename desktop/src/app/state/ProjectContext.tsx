@@ -29,6 +29,19 @@ import type { SourceView } from './sourceStatus';
 /** How long typing must settle before the backend is asked about presence. */
 const PRESENCE_DEBOUNCE_MS = 300;
 
+/**
+ * A correlation id for one analysis run.
+ *
+ * `crypto.randomUUID` where it exists; a counter otherwise, which is enough
+ * because the only thing it has to do is differ from the run before it.
+ */
+let runCounter = 0;
+function nextRunToken(): string {
+  runCounter += 1;
+  const unique = globalThis.crypto?.randomUUID?.();
+  return unique ?? `run-${runCounter}-${Date.now()}`;
+}
+
 interface ProjectContextValue {
   readonly state: AppState;
   readonly dispatch: Dispatch<AppAction>;
@@ -681,6 +694,20 @@ export function ProjectProvider({ children }: { children: ReactNode }): JSX.Elem
     ],
   );
 
+  /*
+   * Live progress from the backend.
+   *
+   * Subscribed once for the lifetime of the provider, not per run: the
+   * subscription is to the CHANNEL, and the reducer decides whether a given
+   * notification belongs to the run currently in flight. Doing it per run would
+   * mean a notification arriving in the gap between two runs had nowhere to go.
+   */
+  useEffect(() => {
+    return desktop().project.onDiagnosisProgress((progress) => {
+      dispatch({ type: 'diagnosisProgress', progress });
+    });
+  }, []);
+
   const runDiagnosis = useCallback(
     async (resume: DiagnosisResumeState | null = null) => {
       /*
@@ -712,12 +739,27 @@ export function ProjectProvider({ children }: { children: ReactNode }): JSX.Elem
       const config = state.molecularDiagnosis;
       const singleFile = state.fastaScope.kind === 'file';
 
-      dispatch({ type: 'diagnosisStarted', continuing: resume !== null });
+      /*
+       * One token per run, minted here.
+       *
+       * It goes out with the request and comes back on every progress
+       * notification, which is how the reducer tells this run's progress from
+       * that of a run the user has already replaced. The backend treats it as
+       * opaque.
+       */
+      const runToken = nextRunToken();
+      dispatch({
+        type: 'diagnosisStarted',
+        continuing: resume !== null,
+        runToken,
+        startedAt: Date.now(),
+      });
 
       const response = await desktop().project.runMolecularDiagnosis({
         focalSetId,
         fastaFileIds: scopeSourceIds,
         singleFile,
+        runToken,
         options: {
           ignoreGaps: config.ignoreGaps,
           giveBenefitOfDoubtToAmbiguousBases: config.giveBenefitOfDoubtToAmbiguousBases,

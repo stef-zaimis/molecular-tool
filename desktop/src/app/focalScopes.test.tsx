@@ -156,6 +156,13 @@ function makeBackend(
     });
   };
 
+  /** Listeners registered through `project.onDiagnosisProgress`. */
+  const progressListeners: Array<(progress: unknown) => void> = [];
+  /** Push one progress notification at the renderer, as the backend would. */
+  const emitProgress = (progress: unknown) => {
+    for (const listener of [...progressListeners]) listener(progress);
+  };
+
   const api = {
     window: {
       minimize: vi.fn(),
@@ -245,11 +252,23 @@ function makeBackend(
         runCalls.push(request);
         return Promise.resolve(ok(RUN_RESULT));
       },
+      /*
+       * The progress channel. Tests that care drive it through
+       * `backend.emitProgress(...)`; the rest simply need it to exist, because
+       * the provider subscribes to it on mount.
+       */
+      onDiagnosisProgress: (listener: (progress: unknown) => void) => {
+        progressListeners.push(listener);
+        return () => {
+          const index = progressListeners.indexOf(listener);
+          if (index >= 0) progressListeners.splice(index, 1);
+        };
+      },
     },
     projectDialog: { selectDirectory: () => Promise.resolve('/projects/p') },
   };
 
-  return { api, presenceCalls, addCalls, runCalls };
+  return { api, presenceCalls, addCalls, runCalls, emitProgress };
 }
 
 let backend: ReturnType<typeof makeBackend>;
