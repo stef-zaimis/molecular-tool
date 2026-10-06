@@ -1,7 +1,7 @@
 # REPO_MAP.md
 
 Map of `molecular-tool`, branch `feature/ui-revamp`.
-Last updated 2026-08-22, after the run-observability pass (section 14).
+Last updated 2026-10-06, after the five-site performance pass (section 16).
 
 The repository is three layers, not one:
 
@@ -946,7 +946,7 @@ The punishment run takes **no** tunables at all: `run_punishment_core` (`pipelin
 
 ## 9. TESTS AND DATA
 
-### Python: 315 tests, all passing
+### Python: 359 tests, all passing
 
 Collected under `pyproject.toml`'s `testpaths = ["tests"]`.
 
@@ -964,6 +964,7 @@ Collected under `pyproject.toml`'s `testpaths = ["tests"]`.
 | `tests/test_project_draft_api.py` | 29 | `saveFocalSet`, presence, `resolveFocalAddQuery`, `matchFocalHeaders` - the calls the working-draft UI is built on. |
 | `tests/test_project_rpc.py` | 41 | The `project.*` methods through `dispatch`, including refusals and their codes. |
 | `tests/test_service.py` | 32 | Protocol framing, error mapping, and a real stdio subprocess proving stdout stays protocol-only. |
+| `tests/test_five_site.py` | 37 | The exhaustive 5-site search, recomputed the long way through `compute_metrics` and compared with EXACT float equality: every state class, both selector kinds, diagnostic states supplied or not, ties, search order, and the `sum()`-versus-chained-addition rule the fast path depends on (section 16). |
 | `tests/test_progress.py` | 17 | Observability: progress does not disturb the request/response framing, several notifications arrive before the response, each is tagged with its run and request, an observed run produces identical science, the ticker throttles, and a refusal names the stage it happened in. |
 | `tests/test_multi_fasta_scope.py` | 10 | What All-files ACTUALLY does with overlapping files today (section 15). Documentation, not endorsement. |
 
@@ -1272,10 +1273,11 @@ contrast set:
   size, or who keeps accepting the continuation prompt, walks straight into it.
 * **the five-site optimisation.** `C(n,5)` where n is the number of unique
   diagnostic sites, each iteration comparing the reference against every
-  non-focal sequence. 30 unique sites is 142,506 combinations — 14 s against 45
-  sequences, and roughly 40x that against 1,990.
+  non-focal sequence. Its per-combination cost was cut by roughly 13x in the
+  pass described in section 16, but the combinatorics are unchanged: 30 unique
+  sites is still 142,506 combinations and 60 is still 5,461,512.
 
-Both now announce their totals before they start and report progress while they
+Both announce their totals before they start and report progress while they
 run, so the UI can distinguish "working" from "stuck". Neither algorithm was
 changed.
 
@@ -1364,5 +1366,67 @@ The refusal's `detail` used to be every problem's detail joined together — wit
 a real alignment, hundreds of near-identical sentences in the message the UI
 shows. It is now capped at eight with a `(+N more)` count
 (`summarise_problems`). No policy changed.
+
+---
+
+## 16. THE FIVE-SITE SEARCH: PRECOMPUTED SCORES
+
+A performance pass over `find_best_five_site_sets`, with one rule: for the same
+input the search must return the same scores and the same winning combinations,
+bit for bit. It does — `tests/test_parity.py` still diffs clean against the
+pre-refactor baseline commit, and `tests/test_five_site.py` recomputes every
+result the long way and demands exact equality.
+
+### What was redundant
+
+`compute_metrics` is a pure function of the sites it is handed, but almost
+everything it did was independent of them. Per combination it re-normalised the
+selectors, re-tested every header for focal membership, and re-derived the
+reference states; and `score_state(ref_state, seq[site])` depends only on
+(site, sequence), so the same `n x sequences` scores were recomputed
+`C(n,5) x 5 / n` times.
+
+Now the comparison set is resolved once, in `sequences` order and with the same
+predicate, and one score is computed per (candidate site, comparison sequence).
+The loop itself is untouched: the same combinations in the same
+`itertools.combinations` order, with the first minimum winning.
+
+### What was deliberately NOT simplified
+
+The obvious next step — replacing `sum(<five scores>)` with
+`a + b + c + d + e` — is **wrong here**. CPython 3.12's `sum` applies Neumaier
+compensation to floats, so the two disagree for **596 of the 3,125** score
+tuples this table can produce (`score_state` returns only `0.0` and `1/k` for
+IUPAC set sizes `k` in 1..4). A one-ulp move in a similarity changes the
+average, and the average decides `best_avg_sites`. Both sums therefore still go
+through the builtin, and `tests/test_five_site.py` pins the rule so the
+temptation fails loudly rather than silently.
+
+The same reasoning rules out deduplicating identical comparison sequences,
+accumulating a running total instead of `sum()` over the materialised list, and
+any reordering of the search: each changes an accumulation order that is part
+of the result.
+
+### Measured
+
+`C(31,5)` = 169,911 combinations, synthetic alignment, Python 3.12.1:
+
+| Case | Before | After |
+|---|---|---|
+| substring selector, 50 contrast sequences | 25.8 s | 1.6 s |
+| substring selector, 250 contrast sequences | 127.2 s | 9.7 s |
+| `ExactHeaders`, 250 contrast sequences | 125.8 s | 9.9 s |
+
+Every reported score and winning tuple is identical across the pair.
+
+### Two smaller fixes in the same pass
+
+* `ExactHeaders.members` rebuilt its `frozenset` on every lookup, which made an
+  O(1) membership test O(len(self)) — on a focal set of several hundred headers,
+  inside a per-header predicate. It is now built once per instance, lazily, so
+  that `tuple.__new__` reconstruction (old pickle protocols) is still covered.
+* The `five_site.start` diagnostic reported `comparison_sequences=len(sequences)`
+  — every record, including the focal group and the reference, which are exactly
+  the ones never scored. It now reports the size of the comparison set.
 
 ---

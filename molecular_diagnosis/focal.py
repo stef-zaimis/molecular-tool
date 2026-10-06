@@ -71,9 +71,28 @@ class ExactHeaders(tuple):
 
     @property
     def members(self) -> frozenset[str]:
-        # Recomputed rather than cached: tuple subclasses cannot carry
-        # non-empty __slots__, and these sets are small.
-        return frozenset(self)
+        """
+        The headers as a set, built once per instance.
+
+        `header_matches_focal` is called per header per sequence — and, before
+        the five-site search was reworked, per header per COMBINATION — so
+        rebuilding the frozenset on every lookup made an O(1) membership test
+        cost O(len(self)). A project focal set of several hundred headers made
+        that very visible.
+
+        Caching is sound because the instance is a tuple: its contents cannot
+        change, so the set can never go stale. It is populated lazily rather
+        than in `__new__` because `tuple.__new__(ExactHeaders, ...)` — which is
+        how `copyreg` rebuilds a tuple subclass under old pickle protocols —
+        bypasses `__new__` entirely; filling it here covers every construction
+        path. Two threads racing would simply build the same set twice.
+        """
+        try:
+            return self._members
+        except AttributeError:
+            members = frozenset(self)
+            self._members = members
+            return members
 
 
 #: A single selector, a list of them, or a resolved ExactHeaders selection.

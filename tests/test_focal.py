@@ -11,6 +11,7 @@ import pytest
 from molecular_diagnosis.core import find_dmc_information
 from molecular_diagnosis.fasta_io import split_focal_headers
 from molecular_diagnosis.focal import (
+    ExactHeaders,
     focal_label,
     header_matches_focal,
     matching_focal_strings,
@@ -260,3 +261,92 @@ def test_find_dmc_information_with_multiple_selectors() -> None:
     assert result.fixed_count == 4
     assert result.candidate_count == 4
     assert result.single == [1, 3]
+
+
+# ---------------------------------------------------------------------------
+# ExactHeaders
+# ---------------------------------------------------------------------------
+#
+# `members` caches its frozenset. The cache is only sound because the instance
+# is a tuple and therefore cannot change, so these pin the tuple semantics the
+# caching relies on as much as the membership behaviour itself.
+
+
+def test_exact_headers_match_by_identity_not_substring() -> None:
+    selector = ExactHeaders(["ABC123", "DEF456"])
+
+    assert header_matches_focal("ABC123", selector)
+    # The whole reason the type exists: a prefix must NOT be dragged in.
+    assert not header_matches_focal("ABC123_extra", selector)
+    assert not header_matches_focal("ABC", selector)
+
+
+def test_exact_headers_members_is_the_same_set_every_time() -> None:
+    selector = ExactHeaders(["ABC123", "DEF456"])
+
+    first = selector.members
+    second = selector.members
+
+    assert first == frozenset({"ABC123", "DEF456"})
+    # Cached, not rebuilt: rebuilding made an O(1) membership test O(n).
+    assert first is second
+
+
+def test_exact_headers_keeps_tuple_semantics() -> None:
+    selector = ExactHeaders(["ABC123", "DEF456"])
+
+    assert selector == ("ABC123", "DEF456")
+    assert hash(selector) == hash(("ABC123", "DEF456"))
+    assert len(selector) == 2
+    assert selector[0] == "ABC123"
+    assert list(selector) == ["ABC123", "DEF456"]
+    assert "ABC123" in selector
+
+
+def test_exact_headers_deduplicates_and_preserves_order() -> None:
+    selector = ExactHeaders(["B", "A", "B", "C"])
+
+    assert tuple(selector) == ("B", "A", "C")
+    assert selector.members == frozenset({"A", "B", "C"})
+
+
+def test_exact_headers_rejects_empty_entries_and_empty_selections() -> None:
+    with pytest.raises(ValueError, match="cannot be empty"):
+        ExactHeaders(["ABC", "   "])
+
+    with pytest.raises(ValueError, match="No identifier string entered"):
+        ExactHeaders([])
+
+
+def test_exact_headers_survives_copying_and_pickling() -> None:
+    """
+    Every construction path must still answer `members`.
+
+    Old pickle protocols rebuild a tuple subclass through
+    `tuple.__new__(cls, ...)`, which skips `__new__` — so the cache cannot live
+    there.
+    """
+    import copy
+    import pickle
+
+    selector = ExactHeaders(["ABC123", "DEF456"])
+    expected = frozenset({"ABC123", "DEF456"})
+
+    assert copy.copy(selector).members == expected
+    assert copy.deepcopy(selector).members == expected
+    for protocol in (0, 2, pickle.HIGHEST_PROTOCOL):
+        assert pickle.loads(pickle.dumps(selector, protocol)).members == expected
+
+    # The bypass itself, directly.
+    assert tuple.__new__(ExactHeaders, ["A", "B"]).members == frozenset({"A", "B"})
+
+
+def test_exact_headers_passes_through_normalisation_unchanged() -> None:
+    selector = ExactHeaders(["ABC123", "DEF456"])
+
+    normalised = normalise_focal_strings(selector)
+
+    # Returned as-is, so the exact-identity rule survives the selector plumbing.
+    assert normalised is selector
+    assert matching_focal_strings("ABC123", selector) == ["ABC123"]
+    assert matching_focal_strings("ABC123_extra", selector) == []
