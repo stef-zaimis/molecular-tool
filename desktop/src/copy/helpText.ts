@@ -107,6 +107,12 @@ export const HELP_TEXT = {
     'Which linked FASTA files this analysis reads. A single file is analysed on its own; ' +
     'All files combines every linked alignment in memory. Focal entries must be present ' +
     'inside whichever scope you choose.',
+
+  comparisonSet:
+    'Optional. Leave it blank and the focal set is compared against every non-focal ' +
+    'specimen in the FASTA pool. List exact headers here and only those specimens are ' +
+    'compared against. Every entry must be present in the FASTA pool, and a specimen ' +
+    'cannot be in both the focal and the comparison set. Saved with the focal set.',
 } as const;
 
 export type HelpTextKey = keyof typeof HELP_TEXT;

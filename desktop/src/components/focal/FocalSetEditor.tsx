@@ -28,6 +28,11 @@ import './FocalSetEditor.css';
  * save response) are pushed back in only when they express DIFFERENT
  * membership, so ordinary typing is never interrupted by a re-serialisation
  * that would move the caret.
+ *
+ * The same component edits the optional Comparison Set. Nothing about the
+ * editing differs; the caller names the list (`noun`) and passes `conflicts`,
+ * the headers that are in BOTH sets, which are painted over every presence
+ * tone in both editors.
  */
 
 /** The design's box height, and the range the grip may drag it through. */
@@ -35,7 +40,14 @@ const DEFAULT_HEIGHT = 143;
 const MIN_HEIGHT = 96;
 const MAX_HEIGHT = 420;
 
-type EntryTone = 'match' | 'elsewhere' | 'missing' | 'unknown' | 'pending' | 'duplicate';
+type EntryTone =
+  | 'match'
+  | 'elsewhere'
+  | 'missing'
+  | 'unknown'
+  | 'pending'
+  | 'duplicate'
+  | 'conflict';
 
 const TONE_BY_PRESENCE: Record<FocalPresenceState, EntryTone> = {
   present_current: 'match',
@@ -51,6 +63,10 @@ const MARKS: Record<EntryTone, Decoration> = {
   unknown: Decoration.mark({ class: 'cm-focal cm-focal--unknown' }),
   pending: Decoration.mark({ class: 'cm-focal cm-focal--pending' }),
   duplicate: Decoration.mark({ class: 'cm-focal cm-focal--duplicate' }),
+  conflict: Decoration.mark({
+    class: 'cm-focal cm-focal--conflict',
+    attributes: { title: 'In both the focal and the comparison set' },
+  }),
 };
 
 /** Read-only is reconfigured in place, so locking a set never remounts the editor. */
@@ -71,8 +87,32 @@ const presenceField = StateField.define<PresenceMap>({
   },
 });
 
-function toneFor(text: string, isMember: boolean, presence: PresenceMap): EntryTone {
+/** Headers that are in both sets. Kept in editor state for the same reason as presence. */
+type ConflictSet = ReadonlySet<string>;
+
+const NO_CONFLICTS: ConflictSet = new Set();
+
+const setConflicts = StateEffect.define<ConflictSet>();
+
+const conflictField = StateField.define<ConflictSet>({
+  create: () => NO_CONFLICTS,
+  update(value, transaction) {
+    for (const effect of transaction.effects) {
+      if (effect.is(setConflicts)) return effect.value;
+    }
+    return value;
+  },
+});
+
+function toneFor(
+  text: string,
+  isMember: boolean,
+  presence: PresenceMap,
+  conflicts: ConflictSet,
+): EntryTone {
   if (!isMember) return 'duplicate';
+  // A conflict outranks presence: it blocks the run whatever the file holds.
+  if (conflicts.has(text)) return 'conflict';
   const verdict = presence[text];
   // No verdict yet is NOT "absent": it renders neutral, so a set never flashes
   // red on its way to being checked.
@@ -81,11 +121,14 @@ function toneFor(text: string, isMember: boolean, presence: PresenceMap): EntryT
 
 function buildDecorations(view: EditorView): DecorationSet {
   const presence = view.state.field(presenceField);
+  const conflicts = view.state.field(conflictField);
   const text = view.state.doc.toString();
   return Decoration.set(
     scanFocalText(text)
       .filter((span) => span.to > span.from)
-      .map((span) => MARKS[toneFor(span.text, span.isMember, presence)].range(span.from, span.to)),
+      .map((span) =>
+        MARKS[toneFor(span.text, span.isMember, presence, conflicts)].range(span.from, span.to),
+      ),
     true,
   );
 }
@@ -100,7 +143,7 @@ const focalHighlighting = ViewPlugin.fromClass(
 
     update(update: ViewUpdate) {
       const presenceChanged = update.transactions.some((transaction) =>
-        transaction.effects.some((effect) => effect.is(setPresence)),
+        transaction.effects.some((effect) => effect.is(setPresence) || effect.is(setConflicts)),
       );
       if (update.docChanged || update.viewportChanged || presenceChanged) {
         this.decorations = buildDecorations(update.view);
@@ -142,6 +185,16 @@ interface FocalSetEditorProps {
   readonly canRedo: boolean;
   readonly onExport: () => void;
   readonly canExport: boolean;
+  /**
+   * Exact headers that are ALSO in the other set. Painted as conflicts, over
+   * any presence tone. Absent means none.
+   */
+  readonly conflicts?: ConflictSet;
+  /** What the list is called in labels: "focal set" or "comparison set". */
+  readonly noun?: string;
+  /** What one entry is called: "focal" or "comparison". */
+  readonly entryNoun?: string;
+  readonly placeholderText?: string;
 }
 
 export function FocalSetEditor({
@@ -157,7 +210,12 @@ export function FocalSetEditor({
   canRedo,
   onExport,
   canExport,
+  conflicts = NO_CONFLICTS,
+  noun = 'focal set',
+  entryNoun = 'focal',
+  placeholderText = 'Type headers separated by ; or use + above',
 }: FocalSetEditorProps): JSX.Element {
+  const Noun = noun.charAt(0).toUpperCase() + noun.slice(1);
   const hostRef = useRef<HTMLDivElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -200,13 +258,14 @@ export function FocalSetEditor({
         doc: serialiseFocalText(headers),
         extensions: [
           presenceField,
+          conflictField.init(() => conflicts),
           focalHighlighting,
           editableCompartment.of([
             EditorView.editable.of(!readOnly),
             EditorState.readOnly.of(readOnly),
           ]),
           EditorView.lineWrapping,
-          placeholder('Type headers separated by ; or use + above'),
+          placeholder(placeholderText),
           // CodeMirror's own history is deliberately absent: undo/redo belong
           // to the draft, so that `+`, `−` and manual edits share one stack
           // and the toolbar buttons drive all three.
@@ -286,6 +345,10 @@ export function FocalSetEditor({
     viewRef.current?.dispatch({ effects: setPresence.of(presence) });
   }, [presence]);
 
+  useEffect(() => {
+    viewRef.current?.dispatch({ effects: setConflicts.of(conflicts) });
+  }, [conflicts]);
+
   /* Read-only is a live property: locking a set must not remount the editor. */
   useEffect(() => {
     viewRef.current?.dispatch({
@@ -306,7 +369,7 @@ export function FocalSetEditor({
     <div className="focal-editor">
       <div className="focal-editor__gutter">
         <IconButton
-          label="Export focal set as a text file"
+          label={`Export ${noun} as a text file`}
           onClick={onExport}
           disabled={!canExport}
         >
@@ -319,7 +382,7 @@ export function FocalSetEditor({
           ref={hostRef}
           className="focal-editor__cm"
           role="group"
-          aria-label="Focal set entries, separated by semicolons"
+          aria-label={`${Noun} entries, separated by semicolons`}
         />
 
         {/*
@@ -331,7 +394,7 @@ export function FocalSetEditor({
           className="focal-editor__grip"
           role="separator"
           aria-orientation="horizontal"
-          aria-label="Resize the focal set field"
+          aria-label={`Resize the ${noun} field`}
           tabIndex={0}
           onPointerDown={(event) => {
             event.preventDefault();
@@ -376,20 +439,20 @@ export function FocalSetEditor({
       </div>
 
       <div className="focal-editor__history">
-        <IconButton label="Undo focal set edit" onClick={onUndo} disabled={!canUndo} variant="panel">
+        <IconButton label={`Undo ${noun} edit`} onClick={onUndo} disabled={!canUndo} variant="panel">
           <UndoIcon size={26} />
         </IconButton>
-        <IconButton label="Redo focal set edit" onClick={onRedo} disabled={!canRedo} variant="panel">
+        <IconButton label={`Redo ${noun} edit`} onClick={onRedo} disabled={!canRedo} variant="panel">
           <RedoIcon size={26} />
         </IconButton>
       </div>
 
       <p className="sr-only" aria-live="polite">
         {headers.length === 0
-          ? 'The focal set is empty.'
+          ? `The ${noun} is empty.`
           : answered < headers.length
-            ? `${headers.length} focal entries. Checking where they are.`
-            : `${headers.length} focal entries. ${present} present in the selected scope.`}
+            ? `${headers.length} ${entryNoun} entries. Checking where they are.`
+            : `${headers.length} ${entryNoun} entries. ${present} present in the selected scope.`}
       </p>
     </div>
   );

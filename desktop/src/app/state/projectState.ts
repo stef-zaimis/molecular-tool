@@ -11,11 +11,12 @@ import type {
   ProjectDiagnosisResult,
   SourceStatusPayload,
 } from '../../backendContract';
-import type { FocalDraft } from './focalDrafts';
+import type { FocalDraft, HeaderListKind } from './focalDrafts';
 import {
   blankDraft,
   draftFromPayload,
   draftSaved,
+  endAllBursts,
   endBurst,
   redoDraft,
   undoDraft,
@@ -371,10 +372,12 @@ export type AppAction =
       headers: readonly string[];
       /** True for a keystroke inside a continuous manual typing burst. */
       coalesce?: boolean;
+      /** Which list the edit addresses. Absent means the focal list. */
+      list?: HeaderListKind;
     }
-  | { type: 'endDraftBurst'; key: string }
-  | { type: 'undoDraftEdit'; key: string }
-  | { type: 'redoDraftEdit'; key: string }
+  | { type: 'endDraftBurst'; key: string; list?: HeaderListKind }
+  | { type: 'undoDraftEdit'; key: string; list?: HeaderListKind }
+  | { type: 'redoDraftEdit'; key: string; list?: HeaderListKind }
   | { type: 'focalDraftSaved'; key: string; focalSet: FocalSetPayload }
   | { type: 'focalDraftLockChanged'; key: string; focalSet: FocalSetPayload }
   | { type: 'removeFocalDraft'; key: string }
@@ -634,7 +637,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
        * it.
        */
       if (action.key === state.activeFocalKey) return state;
-      const closed = mapDraft(state, state.activeFocalKey, endBurst);
+      const closed = mapDraft(state, state.activeFocalKey, endAllBursts);
       return {
         ...closed,
         activeFocalKey: action.key,
@@ -652,21 +655,24 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     case 'setDraftHeaders':
       return mapDraft(state, action.key, (draft) =>
         editable(draft)
-          ? withHeaders(draft, action.headers, { coalesce: action.coalesce ?? false })
+          ? withHeaders(draft, action.headers, {
+              coalesce: action.coalesce ?? false,
+              list: action.list ?? 'focal',
+            })
           : draft,
       );
 
     case 'endDraftBurst':
-      return mapDraft(state, action.key, endBurst);
+      return mapDraft(state, action.key, (draft) => endBurst(draft, action.list ?? 'focal'));
 
     case 'undoDraftEdit':
       return mapDraft(state, action.key, (draft) =>
-        editable(draft) ? undoDraft(draft) : draft,
+        editable(draft) ? undoDraft(draft, action.list ?? 'focal') : draft,
       );
 
     case 'redoDraftEdit':
       return mapDraft(state, action.key, (draft) =>
-        editable(draft) ? redoDraft(draft) : draft,
+        editable(draft) ? redoDraft(draft, action.list ?? 'focal') : draft,
       );
 
     case 'focalDraftSaved':

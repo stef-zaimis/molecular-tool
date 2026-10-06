@@ -27,6 +27,7 @@ def write_text_report(
     dmc: DMCResult,
     five_site_result: FiveSiteResult,
     punishment_result: PunishmentResult | None = None,
+    comparison_summary: str | None = None,
 ) -> None:
     output_path = Path(output_path)
     sites = dmc.unique
@@ -54,6 +55,9 @@ def write_text_report(
         file.write(f"Alignment length: {alignment_length}\n")
         file.write(f"Focal sequences: {len(focal_headers)}\n")
         file.write(f"Non-focal sequences: {len(non_focal_headers)}\n")
+        # Only for an explicit comparison set, so a default report is unchanged.
+        if comparison_summary:
+            file.write(f"Comparison set: {comparison_summary}\n")
         file.write(f"Reference sequence selected: {ref_id}\n\n")
 
         file.write("Run diagnostics:\n")

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FocalSetEditor } from '../components/focal/FocalSetEditor';
 import { WorkspaceRightPane } from '../components/alignment/WorkspaceRightPane';
 import { HelpButton } from '../components/controls/HelpButton';
@@ -14,16 +14,123 @@ import {
   canUndo,
   isDirty,
   isNewDraft,
+  overlappingHeaders,
   saveBlockedReason,
 } from '../app/state/focalDrafts';
+import type { HeaderListKind } from '../app/state/focalDrafts';
 import { useTypingBurst } from '../app/state/typingBurst';
 import type { FocalEditMode } from '../app/state/projectState';
 import './MolecularDiagnosisScreen.css';
 
 /** Filename-safe stem for the exported focal set. */
-function exportFileName(title: string): string {
+function exportFileName(title: string, suffix = ''): string {
   const stem = title.trim().replace(/[^\w.-]+/g, '_').replace(/^_+|_+$/g, '');
-  return `${stem || 'focal-set'}.txt`;
+  return `${stem || 'focal-set'}${suffix}.txt`;
+}
+
+interface HeaderQueryRowProps {
+  readonly id: string;
+  /** "focal" or "comparison": what an entry is called in labels. */
+  readonly entryNoun: string;
+  readonly mode: FocalEditMode;
+  readonly onModeChange: (mode: FocalEditMode) => void;
+  readonly value: string;
+  readonly onChange: (value: string) => void;
+  readonly onSubmit: () => void;
+  readonly busy: boolean;
+  readonly locked: boolean;
+  readonly help: { readonly label: string; readonly text: string };
+}
+
+/**
+ * The STRING row: the +/− mode pair, the search string and its Enter.
+ *
+ * One component for both the focal and the comparison list, so `+` and `−`
+ * cannot come to mean different things in the two places. The focal row's
+ * labels are exactly what they were before the comparison row existed.
+ */
+function HeaderQueryRow({
+  id,
+  entryNoun,
+  mode,
+  onModeChange,
+  value,
+  onChange,
+  onSubmit,
+  busy,
+  locked,
+  help,
+}: HeaderQueryRowProps): JSX.Element {
+  const Noun = entryNoun.charAt(0).toUpperCase() + entryNoun.slice(1);
+  const isFocal = entryNoun === 'focal';
+  return (
+    <div className="diagnosis__row diagnosis__row--string">
+      <div
+        className="diagnosis__set-controls"
+        role="radiogroup"
+        aria-label={`${Noun} entry edit mode`}
+      >
+        <button
+          type="button"
+          role="radio"
+          aria-checked={mode === 'add'}
+          className={`mode-button${mode === 'add' ? ' is-selected' : ''}`}
+          title={`Add mode: Enter adds every matching FASTA header to the ${entryNoun} set`}
+          onClick={() => onModeChange('add')}
+        >
+          <PlusCircleIcon size={30} />
+          <span className="sr-only">{isFocal ? 'Add mode' : 'Add to comparison set'}</span>
+        </button>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={mode === 'remove'}
+          className={`mode-button${mode === 'remove' ? ' is-selected' : ''}`}
+          title={`Remove mode: Enter removes every ${entryNoun} entry containing the string`}
+          onClick={() => onModeChange('remove')}
+        >
+          <MinusCircleIcon size={30} />
+          <span className="sr-only">{isFocal ? 'Remove mode' : 'Remove from comparison set'}</span>
+        </button>
+      </div>
+
+      <label className="diagnosis__label" htmlFor={id}>
+        STRING
+      </label>
+
+      <TextField
+        id={id}
+        ariaLabel={
+          isFocal
+            ? mode === 'add'
+              ? 'Search string: add every matching header'
+              : 'Search string: remove every matching focal entry'
+            : mode === 'add'
+              ? 'Comparison string: add matching headers to the comparison set'
+              : 'Comparison string: remove matching comparison entries'
+        }
+        value={value}
+        readOnly={locked}
+        onChange={onChange}
+        onSubmit={onSubmit}
+        compact
+        width="var(--w-field)"
+        action={{
+          label: 'Enter',
+          ariaLabel: isFocal
+            ? mode === 'add'
+              ? 'Apply add'
+              : 'Apply remove'
+            : mode === 'add'
+              ? 'Apply comparison add'
+              : 'Apply comparison remove',
+          onClick: onSubmit,
+          disabled: busy || locked,
+        }}
+      />
+      <HelpButton label={help.label} text={help.text} />
+    </div>
+  );
 }
 
 /**
@@ -59,6 +166,9 @@ export function MolecularDiagnosisScreen(): JSX.Element {
   const scope = state.fastaScope;
 
   const [pendingString, setPendingString] = useState('');
+  /* The comparison row keeps its own string and mode: two rows, two queries. */
+  const [comparisonString, setComparisonString] = useState('');
+  const [comparisonMode, setComparisonMode] = useState<FocalEditMode>('add');
   const [busy, setBusy] = useState(false);
   const [viewerDragging, setViewerDragging] = useState(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
@@ -91,8 +201,28 @@ export function MolecularDiagnosisScreen(): JSX.Element {
   // it, and the reducer has already closed the burst on the one being left.
   useEffect(() => burst.cancel, [activeDraft.key, burst.cancel]);
 
+  /* The comparison list has its own undo stack, so its own burst timer. */
+  const comparisonBurst = useTypingBurst<string>(
+    useCallback(
+      (key: string) => dispatch({ type: 'endDraftBurst', key, list: 'comparison' }),
+      [dispatch],
+    ),
+  );
+  useEffect(() => comparisonBurst.cancel, [activeDraft.key, comparisonBurst.cancel]);
+
+  /*
+   * Headers in BOTH lists. Both editors paint them, and a persistent line says
+   * why Run is waiting. Nothing is removed from either side automatically.
+   */
+  const overlapKey = overlappingHeaders(activeDraft).join('\n');
+  const conflicts = useMemo(
+    () => new Set(overlapKey ? overlapKey.split('\n') : []),
+    [overlapKey],
+  );
+
   const save = async () => {
     burst.endNow(activeDraft.key);
+    comparisonBurst.endNow(activeDraft.key);
     const saved = await saveActiveDraft();
     // After a save the field must show exactly what was stored — no struck-out
     // duplicate left behind for an entry the database does not hold.
@@ -113,22 +243,25 @@ export function MolecularDiagnosisScreen(): JSX.Element {
 
   const setMode = (next: FocalEditMode) => dispatch({ type: 'setFocalMode', mode: next });
 
-  /** Enter applies the current mode, through the backend. */
-  const applyPendingString = async () => {
-    const value = pendingString.trim();
+  /** Enter applies the row's current mode to its list, through the backend. */
+  const applyQuery = async (list: HeaderListKind) => {
+    const isFocal = list === 'focal';
+    const value = (isFocal ? pendingString : comparisonString).trim();
+    const rowMode = isFocal ? mode : comparisonMode;
     if (!value || busy) return;
 
     // `+`/`−` are one deliberate action and one undo step each, so whatever was
     // being typed is a finished step before either runs.
-    burst.endNow(activeDraft.key);
+    (isFocal ? burst : comparisonBurst).endNow(activeDraft.key);
 
     setBusy(true);
-    const applied = mode === 'add' ? await addByQuery(value) : await removeByQuery(value);
+    const applied =
+      rowMode === 'add' ? await addByQuery(value, list) : await removeByQuery(value, list);
     setBusy(false);
     // Cleared only when something happened, so a query that matched nothing
     // can be corrected rather than retyped.
     if (applied) {
-      setPendingString('');
+      (isFocal ? setPendingString : setComparisonString)('');
       // A discrete `+`/`−` is a safe moment to square the text up.
       canonicalise();
     }
@@ -157,10 +290,29 @@ export function MolecularDiagnosisScreen(): JSX.Element {
     burst.endNow(activeDraft.key);
   }, [burst, activeDraft.key]);
 
-  const exportFocalSet = async () => {
+  const onComparisonChange = useCallback(
+    (headers: readonly string[], typing: boolean) => {
+      dispatch({
+        type: 'setDraftHeaders',
+        key: activeDraft.key,
+        headers,
+        coalesce: typing,
+        list: 'comparison',
+      });
+      if (typing) comparisonBurst.touch(activeDraft.key);
+      else comparisonBurst.cancel();
+    },
+    [dispatch, activeDraft.key, comparisonBurst],
+  );
+
+  const onComparisonBlur = useCallback(() => {
+    comparisonBurst.endNow(activeDraft.key);
+  }, [comparisonBurst, activeDraft.key]);
+
+  const exportFocalSet = async (list: HeaderListKind = 'focal') => {
     const result = await desktop().dialog.exportFocalSet({
-      suggestedName: exportFileName(activeDraft.title),
-      lines: activeDraft.headers,
+      suggestedName: exportFileName(activeDraft.title, list === 'focal' ? '' : '-comparison'),
+      lines: list === 'focal' ? activeDraft.headers : activeDraft.comparison,
     });
 
     if (!result.ok && result.code !== 'CANCELLED') {
@@ -239,62 +391,18 @@ export function MolecularDiagnosisScreen(): JSX.Element {
           </div>
         )}
 
-        <div className="diagnosis__row diagnosis__row--string">
-          <div
-            className="diagnosis__set-controls"
-            role="radiogroup"
-            aria-label="Focal entry edit mode"
-          >
-            <button
-              type="button"
-              role="radio"
-              aria-checked={mode === 'add'}
-              className={`mode-button${mode === 'add' ? ' is-selected' : ''}`}
-              title="Add mode: Enter adds every matching FASTA header to the focal set"
-              onClick={() => setMode('add')}
-            >
-              <PlusCircleIcon size={30} />
-              <span className="sr-only">Add mode</span>
-            </button>
-            <button
-              type="button"
-              role="radio"
-              aria-checked={mode === 'remove'}
-              className={`mode-button${mode === 'remove' ? ' is-selected' : ''}`}
-              title="Remove mode: Enter removes every focal entry containing the string"
-              onClick={() => setMode('remove')}
-            >
-              <MinusCircleIcon size={30} />
-              <span className="sr-only">Remove mode</span>
-            </button>
-          </div>
-
-          <label className="diagnosis__label" htmlFor="focal-string">
-            STRING
-          </label>
-
-          <TextField
-            id="focal-string"
-            ariaLabel={
-              mode === 'add'
-                ? 'Search string: add every matching header'
-                : 'Search string: remove every matching focal entry'
-            }
-            value={pendingString}
-            readOnly={locked}
-            onChange={setPendingString}
-            onSubmit={() => void applyPendingString()}
-            compact
-            width="var(--w-field)"
-            action={{
-              label: 'Enter',
-              ariaLabel: mode === 'add' ? 'Apply add' : 'Apply remove',
-              onClick: () => void applyPendingString(),
-              disabled: busy || locked,
-            }}
-          />
-          <HelpButton label="About the focal search string" text={HELP_TEXT.focalString} />
-        </div>
+        <HeaderQueryRow
+          id="focal-string"
+          entryNoun="focal"
+          mode={mode}
+          onModeChange={setMode}
+          value={pendingString}
+          onChange={setPendingString}
+          onSubmit={() => void applyQuery('focal')}
+          busy={busy}
+          locked={locked}
+          help={{ label: 'About the focal search string', text: HELP_TEXT.focalString }}
+        />
 
         {/*
           FASTA POOL — the analysis and search scope. It decides which files a
@@ -351,8 +459,9 @@ export function MolecularDiagnosisScreen(): JSX.Element {
             }}
             canUndo={canUndo(activeDraft) && !locked}
             canRedo={canRedo(activeDraft) && !locked}
-            onExport={() => void exportFocalSet()}
+            onExport={() => void exportFocalSet('focal')}
             canExport={activeDraft.headers.length > 0}
+            conflicts={conflicts}
           />
 
           {/*
@@ -371,6 +480,81 @@ export function MolecularDiagnosisScreen(): JSX.Element {
             <span className="diagnosis__search-enter">ENTER</span>
           </div>
         </div>
+
+        {/*
+          COMPARISON SET — optional, saved WITH the focal set. Blank means the
+          default every run has always had: compare against every non-focal
+          specimen in the FASTA pool. The same editor, the same +/−, the same
+          presence colours; headers also in the focal set are painted as
+          conflicts in both boxes.
+        */}
+        <section className="diagnosis__comparison" aria-labelledby="comparison-set-heading">
+          <div className="diagnosis__comparison-heading">
+            <span
+              id="comparison-set-heading"
+              className="diagnosis__label diagnosis__label--section"
+            >
+              COMPARISON SET
+            </span>
+            <span className="diagnosis__note">
+              Leave blank to compare against all non-focal specimens in the FASTA pool.
+            </span>
+            <HelpButton label="About the comparison set" text={HELP_TEXT.comparisonSet} />
+          </div>
+
+          <HeaderQueryRow
+            id="comparison-string"
+            entryNoun="comparison"
+            mode={comparisonMode}
+            onModeChange={setComparisonMode}
+            value={comparisonString}
+            onChange={setComparisonString}
+            onSubmit={() => void applyQuery('comparison')}
+            busy={busy}
+            locked={locked}
+            help={{ label: 'About the comparison search string', text: HELP_TEXT.focalString }}
+          />
+
+          <div className="diagnosis__editor diagnosis__editor--comparison">
+            <FocalSetEditor
+              headers={activeDraft.comparison}
+              presence={state.focalPresence.byHeader}
+              readOnly={locked}
+              onChange={onComparisonChange}
+              onEditingEnd={onComparisonBlur}
+              canonicalToken={canonicalToken}
+              onUndo={() => {
+                comparisonBurst.endNow(activeDraft.key);
+                dispatch({ type: 'undoDraftEdit', key: activeDraft.key, list: 'comparison' });
+              }}
+              onRedo={() => {
+                comparisonBurst.endNow(activeDraft.key);
+                dispatch({ type: 'redoDraftEdit', key: activeDraft.key, list: 'comparison' });
+              }}
+              canUndo={canUndo(activeDraft, 'comparison') && !locked}
+              canRedo={canRedo(activeDraft, 'comparison') && !locked}
+              onExport={() => void exportFocalSet('comparison')}
+              canExport={activeDraft.comparison.length > 0}
+              conflicts={conflicts}
+              noun="comparison set"
+              entryNoun="comparison"
+              placeholderText="Optional: type headers separated by ; or use + above"
+            />
+          </div>
+
+          {/*
+            Persistent, not a toast: it stays exactly as long as the problem
+            does, and says what to do about it.
+          */}
+          {conflicts.size > 0 && (
+            <p className="diagnosis__conflict" role="status">
+              {conflicts.size === 1
+                ? '1 specimen is in both the focal and the comparison set (highlighted). '
+                : `${conflicts.size} specimens are in both the focal and the comparison set (highlighted). `}
+              A specimen cannot belong to both. Remove it from one set to run.
+            </p>
+          )}
+        </section>
 
         <div className="diagnosis__parameters">
           <span className="diagnosis__label diagnosis__label--section">SELECT PARAMETERS</span>

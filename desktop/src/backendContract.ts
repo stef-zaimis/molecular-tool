@@ -44,6 +44,9 @@ export type BackendErrorCode =
   | 'FOCAL_ENTRIES_NOT_IN_FILE'
   | 'FOCAL_ENTRIES_NOT_IN_SCOPE'
   | 'FOCAL_PRESENCE_UNKNOWN'
+  | 'COMPARISON_OVERLAPS_FOCAL'
+  | 'COMPARISON_ENTRIES_NOT_IN_FILE'
+  | 'COMPARISON_ENTRIES_NOT_IN_SCOPE'
   | 'NO_FILES_SELECTED'
   | 'SCOPE_MISMATCH'
   | 'DUPLICATE_HEADER_IN_FILE'
@@ -332,6 +335,13 @@ export interface FocalSetPayload {
   readonly title: string;
   readonly locked: boolean;
   readonly entries: readonly FocalEntryPayload[];
+  /**
+   * The optional explicit Comparison Set, saved WITH the focal set. Exact
+   * headers. Empty or absent means "compare against every non-focal sequence
+   * in the FASTA pool", which is what every set saved before this existed
+   * means.
+   */
+  readonly comparisonHeaders?: readonly string[];
 }
 
 /**
@@ -371,6 +381,11 @@ export interface SaveFocalSetRequest {
   readonly title: string;
   /** Exact headers. Ones matching no FASTA are still valid members. */
   readonly headers: readonly string[];
+  /**
+   * The explicit Comparison Set, saved in the same transaction. Omitted leaves
+   * the stored list untouched; `[]` clears it.
+   */
+  readonly comparisonHeaders?: readonly string[];
 }
 
 /**
@@ -495,8 +510,13 @@ export interface ProjectDiagnosisResult {
   readonly focalSetId: string;
   /** The exact headers used as the focal group. Not substrings. */
   readonly focalHeaders: readonly string[];
+  /** The explicit comparison group; empty when every non-focal sequence was used. */
+  readonly comparisonHeaders?: readonly string[];
   readonly fastaFileIds: readonly string[];
+  /** Sequences the analysis used: focal + comparison. */
   readonly sequenceCount: number;
+  /** Sequences in the selected FASTA pool; larger only under an explicit comparison. */
+  readonly scopeSequenceCount?: number;
   readonly alignmentLength: number | null;
   readonly outputs: {
     readonly reportTxt: string;

@@ -166,6 +166,12 @@ export function DiagnosisRunPanel({
           <span className="run-panel__status">
             {run.result.sequenceCount} sequences · alignment length{' '}
             {run.result.alignmentLength ?? '—'}
+            {/* Say which contrast was used: the default is silent, as it always was. */}
+            {(run.result.comparisonHeaders?.length ?? 0) > 0 &&
+              ` · compared against ${run.result.comparisonHeaders?.length} selected specimen(s)` +
+                (run.result.scopeSequenceCount !== undefined
+                  ? ` of ${run.result.scopeSequenceCount} in the FASTA pool`
+                  : '')}
           </span>
         )}
       </div>

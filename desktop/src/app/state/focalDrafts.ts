@@ -32,6 +32,17 @@ export interface FocalHistory {
 
 export const EMPTY_HISTORY: FocalHistory = { past: [], future: [] };
 
+/**
+ * Which of a draft's two header lists an edit addresses.
+ *
+ * `focal` is the focal set proper. `comparison` is its optional explicit
+ * Comparison Set: saved, locked and deleted WITH the focal set, never on its
+ * own, which is why it lives on the same draft rather than in a second
+ * library. Each list keeps its own undo stack, because each editor has its own
+ * undo/redo controls.
+ */
+export type HeaderListKind = 'focal' | 'comparison';
+
 export interface FocalDraft {
   /**
    * Stable local identity, for React keys and for addressing a draft that has
@@ -59,6 +70,43 @@ export interface FocalDraft {
    * coalesce: each is one deliberate action and one step.
    */
   readonly burstOpen: boolean;
+  /**
+   * The explicit Comparison Set: saved, working, history and burst, exactly
+   * parallel to the focal fields above. Empty means "compare against every
+   * non-focal sequence in the FASTA pool".
+   */
+  readonly savedComparison: readonly string[];
+  readonly comparison: readonly string[];
+  readonly comparisonHistory: FocalHistory;
+  readonly comparisonBurstOpen: boolean;
+}
+
+/** One list's editable state, so every edit operation is written once. */
+interface HeaderListView {
+  readonly headers: readonly string[];
+  readonly history: FocalHistory;
+  readonly burstOpen: boolean;
+}
+
+function viewOf(draft: FocalDraft, list: HeaderListKind): HeaderListView {
+  return list === 'focal'
+    ? { headers: draft.headers, history: draft.history, burstOpen: draft.burstOpen }
+    : {
+        headers: draft.comparison,
+        history: draft.comparisonHistory,
+        burstOpen: draft.comparisonBurstOpen,
+      };
+}
+
+function withView(draft: FocalDraft, list: HeaderListKind, view: HeaderListView): FocalDraft {
+  return list === 'focal'
+    ? { ...draft, headers: view.headers, history: view.history, burstOpen: view.burstOpen }
+    : {
+        ...draft,
+        comparison: view.headers,
+        comparisonHistory: view.history,
+        comparisonBurstOpen: view.burstOpen,
+      };
 }
 
 /**
@@ -106,12 +154,22 @@ export function blankDraft(title = ''): FocalDraft {
     locked: false,
     history: EMPTY_HISTORY,
     burstOpen: false,
+    savedComparison: [],
+    comparison: [],
+    comparisonHistory: EMPTY_HISTORY,
+    comparisonBurstOpen: false,
   };
 }
 
-/** A draft whose working copy starts out identical to what is stored. */
+/**
+ * A draft whose working copy starts out identical to what is stored.
+ *
+ * A set saved before comparison sets existed carries no comparison list; it
+ * loads as empty, which is exactly the behaviour it always had.
+ */
 export function draftFromPayload(payload: FocalSetPayload): FocalDraft {
   const headers = payload.entries.map((entry) => entry.header);
+  const comparison = payload.comparisonHeaders ?? [];
   return {
     key: `set-${payload.id}`,
     persistedId: payload.id,
@@ -122,6 +180,10 @@ export function draftFromPayload(payload: FocalSetPayload): FocalDraft {
     locked: payload.locked,
     history: EMPTY_HISTORY,
     burstOpen: false,
+    savedComparison: comparison,
+    comparison,
+    comparisonHistory: EMPTY_HISTORY,
+    comparisonBurstOpen: false,
   };
 }
 
@@ -146,7 +208,22 @@ export function isNewDraft(draft: FocalDraft): boolean {
 export function isDirty(draft: FocalDraft): boolean {
   if (isNewDraft(draft)) return true;
   if (draft.title.trim() !== draft.savedTitle.trim()) return true;
+  if (!sameHeaders(normaliseHeaders(draft.comparison), normaliseHeaders(draft.savedComparison))) {
+    return true;
+  }
   return !sameHeaders(normaliseHeaders(draft.headers), normaliseHeaders(draft.savedHeaders));
+}
+
+/**
+ * Exact headers that are in BOTH the focal and the comparison list.
+ *
+ * Complete-header equality, the rule the backend refuses a run on. Neither
+ * side is silently trimmed of them: both editors mark them and Run waits
+ * until the user decides which set each one belongs to.
+ */
+export function overlappingHeaders(draft: FocalDraft): readonly string[] {
+  const focal = new Set(normaliseHeaders(draft.headers));
+  return normaliseHeaders(draft.comparison).filter((header) => focal.has(header));
 }
 
 /**
@@ -160,91 +237,122 @@ export function isDirty(draft: FocalDraft): boolean {
 export function withHeaders(
   draft: FocalDraft,
   headers: readonly string[],
-  { coalesce = false }: { coalesce?: boolean } = {},
+  { coalesce = false, list = 'focal' }: { coalesce?: boolean; list?: HeaderListKind } = {},
 ): FocalDraft {
+  const current = viewOf(draft, list);
   const next = normaliseHeaders(headers);
-  if (sameHeaders(next, draft.headers)) {
-    return draft.burstOpen === coalesce ? draft : { ...draft, burstOpen: coalesce };
+  if (sameHeaders(next, current.headers)) {
+    return current.burstOpen === coalesce
+      ? draft
+      : withView(draft, list, { ...current, burstOpen: coalesce });
   }
 
-  if (coalesce && draft.burstOpen) {
+  if (coalesce && current.burstOpen) {
     // Inside an open burst: the step recorded when it began still describes
     // the state to go back to.
-    return { ...draft, headers: next };
+    return withView(draft, list, { ...current, headers: next });
   }
 
-  return {
-    ...draft,
+  return withView(draft, list, {
     headers: next,
     burstOpen: coalesce,
     // Any fresh edit invalidates the redo branch.
-    history: { past: [...draft.history.past, draft.headers], future: [] },
-  };
+    history: { past: [...current.history.past, current.headers], future: [] },
+  });
 }
 
 /** Close an open typing burst, so the next keystroke starts a new undo step. */
-export function endBurst(draft: FocalDraft): FocalDraft {
-  return draft.burstOpen ? { ...draft, burstOpen: false } : draft;
+export function endBurst(draft: FocalDraft, list: HeaderListKind = 'focal'): FocalDraft {
+  const current = viewOf(draft, list);
+  return current.burstOpen ? withView(draft, list, { ...current, burstOpen: false }) : draft;
+}
+
+/** Close the bursts of BOTH lists — what leaving a draft does. */
+export function endAllBursts(draft: FocalDraft): FocalDraft {
+  return endBurst(endBurst(draft, 'focal'), 'comparison');
+}
+
+/** The working headers of one list. */
+export function headersOf(draft: FocalDraft, list: HeaderListKind): readonly string[] {
+  return viewOf(draft, list).headers;
 }
 
 /** `+`: append exact headers already resolved by the backend, in hit order. */
-export function appendHeaders(draft: FocalDraft, incoming: readonly string[]): FocalDraft {
-  return withHeaders(draft, [...draft.headers, ...incoming]);
+export function appendHeaders(
+  draft: FocalDraft,
+  incoming: readonly string[],
+  list: HeaderListKind = 'focal',
+): FocalDraft {
+  return withHeaders(draft, [...headersOf(draft, list), ...incoming], { list });
 }
 
 /** `-`: drop the headers the backend matched against this working copy. */
-export function removeHeaders(draft: FocalDraft, doomed: readonly string[]): FocalDraft {
+export function removeHeaders(
+  draft: FocalDraft,
+  doomed: readonly string[],
+  list: HeaderListKind = 'focal',
+): FocalDraft {
   const remove = new Set(doomed);
-  if (!draft.headers.some((header) => remove.has(header))) return draft;
+  const headers = headersOf(draft, list);
+  if (!headers.some((header) => remove.has(header))) return draft;
   return withHeaders(
     draft,
-    draft.headers.filter((header) => !remove.has(header)),
+    headers.filter((header) => !remove.has(header)),
+    { list },
   );
 }
 
-export function canUndo(draft: FocalDraft): boolean {
-  return draft.history.past.length > 0;
+export function canUndo(draft: FocalDraft, list: HeaderListKind = 'focal'): boolean {
+  return viewOf(draft, list).history.past.length > 0;
 }
 
-export function canRedo(draft: FocalDraft): boolean {
-  return draft.history.future.length > 0;
+export function canRedo(draft: FocalDraft, list: HeaderListKind = 'focal'): boolean {
+  return viewOf(draft, list).history.future.length > 0;
 }
 
-export function undoDraft(draft: FocalDraft): FocalDraft {
-  const { past, future } = draft.history;
+export function undoDraft(draft: FocalDraft, list: HeaderListKind = 'focal'): FocalDraft {
+  const current = viewOf(draft, list);
+  const { past, future } = current.history;
   if (past.length === 0) return draft;
-  return {
-    ...draft,
+  return withView(draft, list, {
     headers: past[past.length - 1],
     // Undoing ends the burst: the next keystroke is a new step, not a
     // continuation of the one just reverted.
     burstOpen: false,
-    history: { past: past.slice(0, -1), future: [draft.headers, ...future] },
-  };
+    history: { past: past.slice(0, -1), future: [current.headers, ...future] },
+  });
 }
 
-export function redoDraft(draft: FocalDraft): FocalDraft {
-  const { past, future } = draft.history;
+export function redoDraft(draft: FocalDraft, list: HeaderListKind = 'focal'): FocalDraft {
+  const current = viewOf(draft, list);
+  const { past, future } = current.history;
   if (future.length === 0) return draft;
   const [next, ...rest] = future;
-  return {
-    ...draft,
+  return withView(draft, list, {
     headers: next,
     burstOpen: false,
-    history: { past: [...past, draft.headers], future: rest },
-  };
+    history: { past: [...past, current.headers], future: rest },
+  });
 }
 
-/** The payload for `project.saveFocalSet`, from a draft. */
+/**
+ * The payload for `project.saveFocalSet`, from a draft.
+ *
+ * Focal and comparison travel together so the backend writes both in one
+ * transaction. `comparisonHeaders` is always sent — `[]` included — so saving
+ * a cleared comparison list really clears it.
+ */
 export function saveRequestFor(draft: FocalDraft): {
   focalSetId: string | null;
   title: string;
   headers: readonly string[];
+  comparisonHeaders: readonly string[];
 } {
   return {
     focalSetId: draft.persistedId,
     title: draft.title.trim(),
     headers: normaliseHeaders(draft.headers),
+    comparisonHeaders: normaliseHeaders(draft.comparison),
   };
 }
 

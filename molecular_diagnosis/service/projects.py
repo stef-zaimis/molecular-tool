@@ -367,10 +367,22 @@ def save_focal_set(params: dict[str, Any]) -> dict[str, Any]:
         )
     title = _require_str(params, "title")
     headers = _require_headers(params)
+    # Absent means "leave the comparison list as it is", so an older caller
+    # that knows nothing about it cannot clear it by saving.
+    comparison = (
+        _require_headers(params, "comparisonHeaders")
+        if params.get("comparisonHeaders") is not None
+        else None
+    )
 
     return {
         "focalSet": _guard(
-            lambda: project.save_focal_set(focal_set_id=set_id, title=title, headers=headers)
+            lambda: project.save_focal_set(
+                focal_set_id=set_id,
+                title=title,
+                headers=headers,
+                comparison_headers=comparison,
+            )
         )
     }
 

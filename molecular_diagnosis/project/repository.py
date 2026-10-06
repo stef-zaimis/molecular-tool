@@ -479,6 +479,72 @@ class Repository:
         return removed
 
     # ------------------------------------------------------------------
+    # Comparison entries (an optional part of a focal set)
+    # ------------------------------------------------------------------
+
+    def list_comparison_headers(self, set_id: str) -> list[str]:
+        """The set's explicit comparison headers, in stored order. Empty means none."""
+        return [
+            row["header"]
+            for row in self.con.execute(
+                "SELECT header FROM focal_set_comparison_entry"
+                " WHERE focal_set_id = ? ORDER BY sort_order, id", (set_id,)
+            )
+        ]
+
+    def replace_comparison_entries(
+        self, set_id: str, headers: Sequence[str]
+    ) -> dict[str, list[str]]:
+        """
+        Make the set's comparison list exactly `headers`, as a diff.
+
+        Caller owns the transaction and has already trimmed and deduplicated.
+        The same shape as `replace_focal_entries`, minus the location cache:
+        comparison entries have none, so surviving rows keep their ids only so
+        that an unchanged save touches nothing.
+        """
+        existing = {
+            row["header"]: (row["id"], row["sort_order"])
+            for row in self.con.execute(
+                "SELECT id, header, sort_order FROM focal_set_comparison_entry"
+                " WHERE focal_set_id = ?", (set_id,)
+            )
+        }
+        wanted = list(headers)
+        wanted_set = set(wanted)
+
+        removed = [header for header in existing if header not in wanted_set]
+        for header in removed:
+            self.con.execute(
+                "DELETE FROM focal_set_comparison_entry WHERE focal_set_id = ? AND header = ?",
+                (set_id, header),
+            )
+
+        stamp = now_ms()
+        added: list[str] = []
+        for position, header in enumerate(wanted):
+            current = existing.get(header)
+            if current is None:
+                self.con.execute(
+                    "INSERT INTO focal_set_comparison_entry(id, focal_set_id, header,"
+                    " sort_order, created_at_ms, updated_at_ms) VALUES (?, ?, ?, ?, ?, ?)",
+                    (new_id(), set_id, header, position, stamp, stamp),
+                )
+                added.append(header)
+            elif current[1] != position:
+                self.con.execute(
+                    "UPDATE focal_set_comparison_entry SET sort_order = ?, updated_at_ms = ?"
+                    " WHERE id = ?",
+                    (position, stamp, current[0]),
+                )
+
+        return {
+            "added": added,
+            "removed": removed,
+            "kept": [header for header in wanted if header in existing],
+        }
+
+    # ------------------------------------------------------------------
     # Focal entry locations (persistent, independent cache)
     # ------------------------------------------------------------------
 

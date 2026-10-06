@@ -162,6 +162,7 @@ def run_pipeline_on_sequences(
     initial_diagnostic_combinations: list[tuple[int, ...]] | None = None,
     initial_combinations_tested_by_length: dict[int, int] | None = None,
     observer: RunObserver = NULL_OBSERVER,
+    comparison_summary: str | None = None,
 ) -> PipelineResult:
     """
     The pipeline body, over sequences that are ALREADY parsed and verified.
@@ -176,6 +177,10 @@ def run_pipeline_on_sequences(
     `observer` is optional and defaults to observing nothing. Every stage below
     is bracketed by it so a caller can say which one a long run is inside; it
     is told about the work, it never takes part in it.
+
+    `comparison_summary` is report text only. A caller that narrowed
+    `sequences` to an explicit comparison set passes a sentence saying so;
+    `None` (every existing caller) writes the report exactly as before.
     """
     output_dir = Path(output_dir)
     ref_id = focal_headers[0]
@@ -269,6 +274,7 @@ def run_pipeline_on_sequences(
             dmc=dmc,
             five_site_result=five_site_result,
             punishment_result=None,
+            comparison_summary=comparison_summary,
         )
 
     with observer.stage(STAGE_WRITING_CONSENSUS, path=str(consensus_txt_output_path)):

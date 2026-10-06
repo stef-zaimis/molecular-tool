@@ -236,6 +236,19 @@
   text-decoration: line-through;
 }
 
+/*
+ * In BOTH the focal and the comparison set. Overrides every presence tone,
+ * because whether the header exists no longer matters until the user decides
+ * which set it belongs to. A filled background rather than another text
+ * colour, so it reads as an error and not as a fifth presence state.
+ */
+.cm-focal--conflict {
+  color: var(--c-token-conflict-fg);
+  background: var(--c-token-conflict-bg);
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px var(--c-token-conflict-bg);
+}
+
 /* ---------------------------------------------------------------- */
 /* Undo / redo panel                                                  */
 /* ---------------------------------------------------------------- */

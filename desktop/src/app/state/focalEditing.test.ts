@@ -298,6 +298,8 @@ describe('save requests', () => {
       focalSetId: 'set-1',
       title: 'Renamed',
       headers: ['a', 'b'],
+      // Always sent, so a cleared comparison list is really cleared.
+      comparisonHeaders: [],
     });
   });
 

@@ -13,6 +13,11 @@
  *   presence not green -> FOCAL_ENTRIES_NOT_IN_FILE / _NOT_IN_SCOPE
  *   presence unknown   -> FOCAL_PRESENCE_UNKNOWN
  *   unusable source    -> SOURCE_UNAVAILABLE
+ *   focal/comparison overlap       -> COMPARISON_OVERLAPS_FOCAL
+ *   comparison entry not green     -> COMPARISON_ENTRIES_NOT_IN_FILE / _NOT_IN_SCOPE
+ *
+ * An EMPTY comparison list is valid and adds no rule: it means "compare
+ * against every non-focal sequence in the FASTA pool", as it always did.
  *
  * If the two ever disagree, the backend wins and the run fails with its own
  * message. This is a courtesy, never a substitute.
@@ -20,7 +25,7 @@
 
 import type { HeaderPresencePayload, SourceStatusPayload } from '../../backendContract';
 import type { FocalDraft } from './focalDrafts';
-import { isDirty, isNewDraft, normaliseHeaders } from './focalDrafts';
+import { isDirty, isNewDraft, normaliseHeaders, overlappingHeaders } from './focalDrafts';
 import type { FocalPresenceState } from './projectState';
 
 export interface RunGate {
@@ -78,6 +83,18 @@ export function evaluateRunGate({
     return { canRun: false, reason: 'Add at least one focal entry before running.' };
   }
 
+  // Before save/dirty: saving would not fix it, so it is the thing to say.
+  const overlap = overlappingHeaders(draft);
+  if (overlap.length > 0) {
+    return {
+      canRun: false,
+      reason:
+        overlap.length === 1
+          ? `${overlap[0]} is in both the focal and the comparison set. Remove it from one of them.`
+          : `${overlap.length} headers are in both the focal and the comparison set. Remove each from one of them.`,
+    };
+  }
+
   // Checked before dirtiness so a brand-new draft with entries says "save it",
   // not "add entries".
   if (isNewDraft(draft)) {
@@ -100,8 +117,13 @@ export function evaluateRunGate({
   const verdicts: (HeaderPresencePayload | undefined)[] = headers.map(
     (header) => presence.byHeader[header],
   );
+  // Presence is keyed by header and asked for both lists at once, so the
+  // comparison entries' answers live in the same map.
+  const comparisonVerdicts: (HeaderPresencePayload | undefined)[] = normaliseHeaders(
+    draft.comparison,
+  ).map((header) => presence.byHeader[header]);
 
-  if (verdicts.some((verdict) => verdict === undefined)) {
+  if ([...verdicts, ...comparisonVerdicts].some((verdict) => verdict === undefined)) {
     return { canRun: false, reason: 'Checking where the focal entries are...' };
   }
 
@@ -128,6 +150,28 @@ export function evaluateRunGate({
       reason: singleFileScope
         ? `${first?.header} is not in the selected FASTA. Choose All files, or a file that contains it.`
         : `${first?.header} is not in any of the selected FASTA files.`,
+    };
+  }
+
+  const comparisonUnknown = comparisonVerdicts.find((verdict) => verdict?.state === 'unknown');
+  if (comparisonUnknown) {
+    return {
+      canRun: false,
+      reason: `Comparison entry ${comparisonUnknown.header} cannot be located: ${
+        singleFileScope ? 'the selected FASTA is' : 'a FASTA in this run is'
+      } unavailable.`,
+    };
+  }
+
+  const comparisonAbsent = comparisonVerdicts.find(
+    (verdict) => verdict?.state !== 'present_current',
+  );
+  if (comparisonAbsent) {
+    return {
+      canRun: false,
+      reason: singleFileScope
+        ? `Comparison entry ${comparisonAbsent.header} is not in the selected FASTA. Choose All files, or a file that contains it.`
+        : `Comparison entry ${comparisonAbsent.header} is not in any of the selected FASTA files.`,
     };
   }
 

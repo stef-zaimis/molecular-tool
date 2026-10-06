@@ -90,6 +90,7 @@ process holds no project state; this package owns the database exclusively.
 |---|---|---|
 | `db/001_initial.sql` | 190 | Projects, FASTA files, header index, focal sets and entries. |
 | `db/002_fasta_file_locked.sql` | 18 | Adds `fasta_file.locked`, additive and defaulted so an existing project opens unchanged. Sets `PRAGMA user_version = 2`. |
+| `db/003_focal_set_comparison_entry.sql` | 40 | Adds `focal_set_comparison_entry` (the optional explicit Comparison Set, keyed to its focal set, ON DELETE CASCADE). Additive; zero rows means the old default. Sets `PRAGMA user_version = 3`. |
 | `db/optional_fts5_trigram.sql` | 25 | Optional accelerated search, applied only where SQLite supports it. |
 
 ### The desktop UI (`desktop/`)
@@ -1430,3 +1431,32 @@ Every reported score and winning tuple is identical across the pair.
   the ones never scored. It now reports the size of the comparison set.
 
 ---
+
+---
+
+## 17. THE COMPARISON SET
+
+An optional list of exact headers saved WITH a focal set (no separate library).
+
+* **Blank** (every set saved before this existed): the run passes the full
+  selected FASTA scope to the pipeline exactly as before, and every non-focal
+  sequence is the contrast. `ProjectService.apply_comparison_set` returns the
+  scope dictionary itself, so this path is unchanged by construction.
+* **Non-blank**: after the scope is built and verified, the run keeps only the
+  focal + comparison sequences, in scope order (so `ref_id` is unchanged), and
+  calls `run_pipeline_on_sequences` unchanged. The core finds the comparison
+  set as its non-focal group. No scientific module was modified; the text
+  report gains one `Comparison set:` line only in this case.
+* **Refusals** (service, not just UI): `COMPARISON_OVERLAPS_FOCAL` (exact header
+  in both), `COMPARISON_ENTRIES_NOT_IN_FILE` / `_NOT_IN_SCOPE` (checked against
+  the verified sequences the run loaded).
+* **Persistence**: `project.saveFocalSet` takes optional `comparisonHeaders`
+  and writes both lists in one transaction; omitted leaves the stored list
+  alone. Payloads carry `comparisonHeaders`.
+* **Renderer**: `FocalDraft` holds a parallel comparison list with its own
+  undo stack (`HeaderListKind`); presence is asked for focal + comparison in
+  one request; `FocalSetEditor` is reused with a `conflicts` decoration that
+  overrides presence tone; `runGate` blocks overlap and non-green comparison
+  entries. Tests: `tests/test_comparison_set.py`,
+  `desktop/src/app/state/comparisonSet.test.ts`, `desktop/src/app/comparisonSet.test.tsx`.
+

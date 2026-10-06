@@ -27,12 +27,13 @@ __all__ = [
 MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "db"
 
 #: Highest migration this build knows how to apply.
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 #: Ordered migrations. The index is the version the migration produces.
 MIGRATIONS: tuple[tuple[int, str], ...] = (
     (1, "001_initial.sql"),
     (2, "002_fasta_file_locked.sql"),
+    (3, "003_focal_set_comparison_entry.sql"),
 )
 
 FTS_SCRIPT = "optional_fts5_trigram.sql"

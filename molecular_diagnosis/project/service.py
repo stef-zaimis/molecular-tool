@@ -189,6 +189,14 @@ def summarise_problems(problems: Sequence[ScopeProblem], limit: int = 8) -> str 
     return "; ".join(details[:limit]) + f"; (+{len(details) - limit} more)"
 
 
+def _capped_detail(headers: Sequence[str], limit: int = 10) -> str:
+    """Headers for a refusal's detail, capped like `summarise_problems`."""
+    text = "; ".join(headers[:limit])
+    if len(headers) > limit:
+        text += f"; (+{len(headers) - limit} more)"
+    return text
+
+
 @dataclass
 class AnalysisScope:
     """A validated, in-memory combination of one or more alignments."""
@@ -669,6 +677,9 @@ class ProjectService:
                 {"id": entry.id, "header": entry.header}
                 for entry in self.repository.list_focal_entries(row.id)
             ],
+            # Empty means no explicit comparison: compare against every
+            # non-focal sequence in the run scope, as before this existed.
+            "comparisonHeaders": self.repository.list_comparison_headers(row.id),
         }
 
     def list_focal_sets(self) -> list[dict[str, object]]:
@@ -783,7 +794,12 @@ class ProjectService:
         }
 
     def save_focal_set(
-        self, *, focal_set_id: str | None, title: str, headers: Sequence[str]
+        self,
+        *,
+        focal_set_id: str | None,
+        title: str,
+        headers: Sequence[str],
+        comparison_headers: Sequence[str] | None = None,
     ) -> dict[str, object]:
         """
         The UI's explicit Save boundary: title + membership, in one transaction.
@@ -802,6 +818,14 @@ class ProjectService:
         that matches no FASTA is still stored: it is a member the user typed,
         and presence will report it as missing rather than the save discarding
         it.
+
+        `comparison_headers` is the set's optional explicit Comparison Set,
+        written in the SAME transaction so focal and comparison membership can
+        never be saved half-and-half. `None` leaves an existing set's
+        comparison list untouched (a client that predates it cannot wipe it);
+        an empty list clears it. A header in both lists is stored as typed:
+        the overlap is a draft problem the UI shows and the run refuses, not
+        something a save should silently resolve by dropping one side.
         """
         cleaned_title = title.strip()
         if not cleaned_title:
@@ -830,6 +854,10 @@ class ProjectService:
                     if entry.header in added
                 ]
                 self._seed_locations_from_index(new_entries, self._trusted_file_ids())
+            if comparison_headers is not None:
+                self.repository.replace_comparison_entries(
+                    set_id, dedupe_headers(comparison_headers)
+                )
             self.repository.commit()
         except Exception:
             self.repository.rollback()
@@ -1329,6 +1357,74 @@ class ProjectService:
             raise ProjectError("FOCAL_EMPTY", "The focal set is empty.")
         return ExactHeaders([entry.header for entry in entries])
 
+    def comparison_headers(self, set_id: str) -> list[str]:
+        """The saved explicit Comparison Set. Empty means "all non-focal in scope"."""
+        self._require_focal_set(set_id)
+        return self.repository.list_comparison_headers(set_id)
+
+    @staticmethod
+    def require_no_overlap(selector: ExactHeaders, comparison: Sequence[str]) -> None:
+        """
+        A specimen is focal or comparison, never both.
+
+        Exact complete-header equality, the same identity the focal set uses.
+        Checked here as well as in the UI: a disabled Run button is not a rule
+        about the data.
+        """
+        overlap = [header for header in comparison if header in selector.members]
+        if overlap:
+            raise ProjectError(
+                "COMPARISON_OVERLAPS_FOCAL",
+                "The same specimen cannot belong to both the focal set and the comparison set.",
+                detail=_capped_detail(overlap),
+            )
+
+    @staticmethod
+    def apply_comparison_set(
+        sequences: dict[str, str],
+        selector: ExactHeaders,
+        comparison: Sequence[str],
+        *,
+        single_file: bool,
+    ) -> dict[str, str]:
+        """
+        The sequences the analysis actually sees.
+
+        Empty `comparison`: the scope's sequences, returned AS-IS - the same
+        object, so the default run is untouched by construction.
+
+        Non-empty: exactly the focal sequences plus the explicit comparison
+        sequences, in the scope's own order. Keeping that order keeps the
+        focal headers in the order they had before, so the reference sequence
+        (the first focal header) is the one an unfiltered run would pick. The
+        scientific core is then called unchanged; it simply finds the
+        comparison set as its non-focal group.
+
+        `sequences` are the verified bytes this run loaded, so a comparison
+        header found here is present in the files being read - the strongest
+        check available, and the one the run actually depends on.
+        """
+        if not comparison:
+            return sequences
+
+        missing = [header for header in comparison if header not in sequences]
+        if missing:
+            if single_file:
+                raise ProjectError(
+                    "COMPARISON_ENTRIES_NOT_IN_FILE",
+                    "Every comparison entry must be present in the selected file before it can "
+                    "be analysed on its own.",
+                    detail=_capped_detail(missing),
+                )
+            raise ProjectError(
+                "COMPARISON_ENTRIES_NOT_IN_SCOPE",
+                "Every comparison entry must be present in at least one of the selected files.",
+                detail=_capped_detail(missing),
+            )
+
+        keep = selector.members | frozenset(comparison)
+        return {header: sequence for header, sequence in sequences.items() if header in keep}
+
     # ------------------------------------------------------------------
 
     def _require_file(self, file_id: str) -> FastaFileRow:
@@ -1394,6 +1490,8 @@ class ProjectService:
             self._require_file(file_id)
 
         selector = self.focal_selector(focal_set_id)
+        comparison = self.comparison_headers(focal_set_id)
+        self.require_no_overlap(selector, comparison)
 
         if single_file and len(fasta_file_ids) != 1:
             raise ProjectError(
@@ -1421,11 +1519,17 @@ class ProjectService:
             first = scope.problems[0]
             raise ProjectError(first.code, first.message, detail=summarise_problems(scope.problems))
 
-        focal_headers, non_focal_headers = partition_headers(list(scope.sequences), selector)
+        analysis_sequences = self.apply_comparison_set(
+            scope.sequences, selector, comparison, single_file=single_file
+        )
+
+        focal_headers, non_focal_headers = partition_headers(list(analysis_sequences), selector)
         observer.event(
             "scope.partitioned",
             focal=len(focal_headers),
             nonFocal=len(non_focal_headers),
+            comparison="explicit" if comparison else "all_non_focal",
+            scopeSequences=len(scope.sequences),
         )
         if not focal_headers:
             raise ProjectError(
@@ -1451,7 +1555,7 @@ class ProjectService:
 
         result = run_pipeline_on_sequences(
             observer=observer,
-            sequences=scope.sequences,
+            sequences=analysis_sequences,
             selectors=selector,
             focal_headers=focal_headers,
             non_focal_headers=non_focal_headers,
@@ -1465,12 +1569,18 @@ class ProjectService:
             start_combination_length=start_length,
             initial_diagnostic_combinations=initial_combos,
             initial_combinations_tested_by_length=initial_tested,
+            comparison_summary=(
+                f"explicit, {len(non_focal_headers)} selected specimen(s) "
+                f"out of {len(scope.sequences)} sequences in the selected FASTA scope"
+                if comparison
+                else None
+            ),
         )
 
         dmc = result.dmc
         observer.event(
             "run.complete",
-            sequences=len(scope.sequences),
+            sequences=len(analysis_sequences),
             uniqueSites=len(dmc.unique),
             stopReason=dmc.stop_reason,
             report=str(result.txt_output_path),
@@ -1479,8 +1589,13 @@ class ProjectService:
         return {
             "focalSetId": focal_set_id,
             "focalHeaders": list(selector),
+            # Empty when the run compared against every non-focal sequence.
+            "comparisonHeaders": list(comparison),
             "fastaFileIds": list(fasta_file_ids),
-            "sequenceCount": len(scope.sequences),
+            # Sequences the analysis used; equals the scope size unless an
+            # explicit Comparison Set narrowed it.
+            "sequenceCount": len(analysis_sequences),
+            "scopeSequenceCount": len(scope.sequences),
             "alignmentLength": scope.alignment_length,
             "outputs": {
                 "reportTxt": str(result.txt_output_path),

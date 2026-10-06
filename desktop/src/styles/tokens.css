@@ -50,6 +50,10 @@
   --c-token-elsewhere: #d8b07a;
   /* Presence could not be established, e.g. a linked file is missing. */
   --c-token-unknown: #9aa6ba;
+  /* A header in BOTH the focal and the comparison set. Deliberately louder
+     than every presence state: it is a blocking error, not a status. */
+  --c-token-conflict-bg: #c0392b;
+  --c-token-conflict-fg: #ffffff;
 
   /* ---------------------------------------------------------------- */
   /* Typography                                                        */

@@ -16,8 +16,8 @@ import {
   selectedFileId,
 } from './projectState';
 import type { AppAction, AppState } from './projectState';
-import type { FocalDraft } from './focalDrafts';
-import { lockBlockedReason, normaliseHeaders, saveRequestFor } from './focalDrafts';
+import type { FocalDraft, HeaderListKind } from './focalDrafts';
+import { headersOf, lockBlockedReason, normaliseHeaders, saveRequestFor } from './focalDrafts';
 import { evaluateRunGate } from './runGate';
 import type { RunGate } from './runGate';
 import type { DiagnosisResumeState, FastaCandidate } from '../../backendContract';
@@ -52,10 +52,13 @@ interface ProjectContextValue {
   readonly activeDraft: FocalDraft;
   /** Commit the working copy. The only focal write ordinary editing performs. */
   readonly saveActiveDraft: () => Promise<boolean>;
-  /** `+`: expand a query to exact headers within the current scope and append them. */
-  readonly addByQuery: (query: string) => Promise<boolean>;
-  /** `−`: drop working headers containing the query. Never searches the FASTA. */
-  readonly removeByQuery: (query: string) => Promise<boolean>;
+  /**
+   * `+`: expand a query to exact headers within the current scope and append
+   * them to `list` (the focal list unless told otherwise).
+   */
+  readonly addByQuery: (query: string, list?: HeaderListKind) => Promise<boolean>;
+  /** `−`: drop working headers of `list` containing the query. Never searches the FASTA. */
+  readonly removeByQuery: (query: string, list?: HeaderListKind) => Promise<boolean>;
   /**
    * Lock or unlock a SAVED, CLEAN draft.
    *
@@ -486,7 +489,7 @@ export function ProjectProvider({ children }: { children: ReactNode }): JSX.Elem
   );
 
   const addByQuery = useCallback(
-    async (query: string) => {
+    async (query: string, list: HeaderListKind = 'focal') => {
       if (!query.trim()) {
         dispatch({ type: 'showNotice', message: 'Type something to search for.' });
         return false;
@@ -522,7 +525,10 @@ export function ProjectProvider({ children }: { children: ReactNode }): JSX.Elem
         // Deterministic hit order, deduplicated against what is already there
         // by `normaliseHeaders`. The query itself is never stored.
         // No `coalesce`: `+` is one deliberate action and one undo step.
-        headers: [...activeDraft.headers, ...headers],
+        // Nothing is filtered against the OTHER list: a header that lands in
+        // both is shown as a conflict, never silently dropped.
+        headers: [...headersOf(activeDraft, list), ...headers],
+        list,
       });
       return true;
     },
@@ -530,7 +536,7 @@ export function ProjectProvider({ children }: { children: ReactNode }): JSX.Elem
   );
 
   const removeByQuery = useCallback(
-    async (query: string) => {
+    async (query: string, list: HeaderListKind = 'focal') => {
       if (!query.trim()) {
         dispatch({ type: 'showNotice', message: 'Type something to remove.' });
         return false;
@@ -538,7 +544,8 @@ export function ProjectProvider({ children }: { children: ReactNode }): JSX.Elem
 
       // Matched in Python so `−` uses the same casefold as everything else,
       // and against the WORKING copy, not the FASTA.
-      const response = await desktop().project.matchFocalHeaders(query, activeDraft.headers);
+      const current = headersOf(activeDraft, list);
+      const response = await desktop().project.matchFocalHeaders(query, current);
       if (!response.ok) {
         dispatch({ type: 'showNotice', message: response.error.message });
         return false;
@@ -548,7 +555,7 @@ export function ProjectProvider({ children }: { children: ReactNode }): JSX.Elem
       if (doomed.size === 0) {
         dispatch({
           type: 'showNotice',
-          message: `No focal entry contains "${query.trim()}".`,
+          message: `No ${list === 'focal' ? 'focal' : 'comparison'} entry contains "${query.trim()}".`,
         });
         return false;
       }
@@ -556,7 +563,8 @@ export function ProjectProvider({ children }: { children: ReactNode }): JSX.Elem
       dispatch({
         type: 'setDraftHeaders',
         key: activeDraft.key,
-        headers: activeDraft.headers.filter((header) => !doomed.has(header)),
+        headers: current.filter((header) => !doomed.has(header)),
+        list,
       });
       return true;
     },
@@ -576,7 +584,15 @@ export function ProjectProvider({ children }: { children: ReactNode }): JSX.Elem
    * can never repaint the current one.
    */
   const presenceGeneration = useRef(0);
-  const draftHeaders = activeDraft.headers;
+  /*
+   * Presence is asked for focal AND comparison entries in one request. The
+   * answer is keyed by header, so both editors and the run gate read the same
+   * map, and the comparison list needs no presence machinery of its own.
+   */
+  const draftHeaders = useMemo(
+    () => normaliseHeaders([...activeDraft.headers, ...activeDraft.comparison]),
+    [activeDraft.headers, activeDraft.comparison],
+  );
   const projectOpen = state.project.status === 'open';
   const comparisonKey = presenceComparisonIds.join(' ');
   const scopeKey = scopeSourceIds.join(' ');

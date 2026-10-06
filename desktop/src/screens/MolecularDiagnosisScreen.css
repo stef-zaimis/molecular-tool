@@ -450,3 +450,46 @@
 .diagnosis.is-viewer-dragging .diagnosis__left {
   pointer-events: none;
 }
+
+/* ---------------------------------------------------------------- */
+/* Comparison set                                                     */
+/* ---------------------------------------------------------------- */
+
+/*
+ * Not in the August design, which predates the comparison set. Built from the
+ * focal block's own parts so it reads as the same kind of control: the same
+ * STRING row, the same editor, the section-label style of SELECT PARAMETERS.
+ */
+.diagnosis__comparison {
+  margin-top: var(--gap-focal-row);
+}
+
+.diagnosis__comparison-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: var(--gap-focal-row);
+  padding-left: 71px;
+}
+
+.diagnosis__comparison-heading .diagnosis__label {
+  flex: 0 0 auto;
+  width: auto;
+  padding-top: 0;
+  text-align: left;
+}
+
+.diagnosis__note {
+  color: var(--c-muted);
+  font-size: 13px;
+}
+
+.diagnosis__conflict {
+  margin: 8px 0 0 116px;
+  max-width: var(--w-focal-box);
+  padding: 6px 10px;
+  background: var(--c-token-conflict-bg);
+  color: var(--c-token-conflict-fg);
+  font-size: 13px;
+  line-height: 1.4;
+}
