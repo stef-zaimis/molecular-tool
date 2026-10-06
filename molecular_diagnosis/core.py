@@ -1,11 +1,24 @@
 from itertools import combinations
+from math import comb
 
 from molecular_diagnosis.constants import (
     BALANCING_EMPTY_LIMIT,
     IUPAC,
     STRICT_BASES,
 )
+from molecular_diagnosis.focal import (
+    FocalSelector,
+    header_matches_focal,
+    normalise_focal_strings,
+)
 from molecular_diagnosis.models import DMCResult, FiveSiteResult
+from molecular_diagnosis.progress import (
+    NULL_OBSERVER,
+    STAGE_DMC_SEARCH,
+    STAGE_FIVE_SITE,
+    ProgressTicker,
+    RunObserver,
+)
 
 
 def state_possibilities(state: str) -> set[str]:
@@ -157,9 +170,24 @@ def compute_metrics(
     sequences: dict[str, str],
     ref_id: str,
     sites: list[int] | tuple[int, ...],
-    target_string: str,
+    focal_strings: FocalSelector,
     diagnostic_states: dict[int, str] | None = None,
 ) -> tuple[float, float, float]:
+    """
+    How similar the most similar non-focal sequence is at these sites.
+
+    Returns `(max_similarity, avg_similarity, similarity_gap)` over every
+    sequence that is neither the reference nor focal.
+
+    NOT dead code, despite no longer being called by `find_best_five_site_sets`:
+    this is the DEFINITION of the metric, written the obvious way, and
+    `tests/test_five_site.py` uses it to recompute the search's results the long
+    way and demand they match exactly. The search's precomputed fast path is
+    only trustworthy for as long as something independent says what the answer
+    should be.
+    """
+    selectors = normalise_focal_strings(focal_strings)
+
     if diagnostic_states is None:
         ref_states = extract_sites(sequences[ref_id], sites)
     else:
@@ -168,7 +196,7 @@ def compute_metrics(
     similarities = []
 
     for header, seq in sequences.items():
-        if header == ref_id or target_string in header:
+        if header == ref_id or header_matches_focal(header, selectors):
             continue
 
         query_states = extract_sites(seq, sites)
@@ -187,7 +215,7 @@ def compute_metrics(
 
 def find_dmc_information(
     sequences: dict[str, str],
-    target_string: str,
+    focal_strings: FocalSelector,
     *,
     include_ambiguous_dmc_bd: bool = False,
     include_gappy_consensus_dmc_sites: bool = False,
@@ -196,6 +224,7 @@ def find_dmc_information(
     start_combination_length: int = 1,
     initial_diagnostic_combinations: list[tuple[int, ...]] | None = None,
     initial_combinations_tested_by_length: dict[int, int] | None = None,
+    observer: RunObserver = NULL_OBSERVER,
 ) -> DMCResult:
     if min_combination_length < 1:
         raise ValueError("Minimum combination length must be at least 1.")
@@ -209,12 +238,20 @@ def find_dmc_information(
     if min_combination_length > max_combination_length:
         raise ValueError("Minimum combination length cannot exceed maximum combination length.")
 
+    selectors = normalise_focal_strings(focal_strings)
+
     all_headers = list(sequences.keys())
     all_seqs = list(sequences.values())
 
-    focal_headers = [header for header in all_headers if target_string in header]
+    focal_headers = [
+        header for header in all_headers if header_matches_focal(header, selectors)
+    ]
     focal = [sequences[header] for header in focal_headers]
-    non_focal = [seq for header, seq in sequences.items() if target_string not in header]
+    non_focal = [
+        seq
+        for header, seq in sequences.items()
+        if not header_matches_focal(header, selectors)
+    ]
 
     if not focal:
         raise ValueError("No focal sequences found.")
@@ -359,7 +396,26 @@ def find_dmc_information(
             combinations_tested_by_length.setdefault(combo_length, 0)
             found_this_length: list[tuple[int, ...]] = []
 
+            # C(n, k) for this size: what the loop below is walking through.
+            # Reported up front so a stage that will take an hour says so at
+            # the start rather than after it.
+            size_total = comb(len(candidate_sites), combo_length)
+            observer.event(
+                "dmc.size.start",
+                size=combo_length,
+                candidate_sites=len(candidate_sites),
+                combinations=size_total,
+            )
+            ticker = ProgressTicker(
+                observer,
+                STAGE_DMC_SEARCH,
+                total=size_total,
+                detail=str(combo_length),
+            )
+
             for combo in combinations(candidate_sites, combo_length):
+                ticker.advance()
+
                 if is_pruned_by_existing_dmc(combo):
                     continue
 
@@ -367,6 +423,14 @@ def find_dmc_information(
 
                 if combination_is_diagnostic(combo):
                     found_this_length.append(combo)
+
+            ticker.finish()
+            observer.event(
+                "dmc.size.end",
+                size=combo_length,
+                tested=combinations_tested_by_length[combo_length],
+                found=len(found_this_length),
+            )
 
             for combo in found_this_length:
                 if combo not in seen_diagnostic_combinations:
@@ -442,9 +506,47 @@ def find_best_five_site_sets(
     sequences: dict[str, str],
     ref_id: str,
     sites: list[int],
-    target_string: str,
+    focal_strings: FocalSelector,
     diagnostic_states: dict[int, str] | None = None,
+    observer: RunObserver = NULL_OBSERVER,
 ) -> FiveSiteResult:
+    """
+    Exhaustive best-of-`C(n, 5)` search.
+
+    THE combinatorial cliff in this codebase, and the reason this function
+    reports progress: the loop is `C(n, 5)` iterations and each one compares
+    the reference against every non-focal sequence, so the cost is
+    `C(n, 5) x non-focal count x 5`. Twenty candidate sites is 15,504
+    combinations; forty is 658,008; sixty is 5,461,512. Against a couple of
+    thousand contrast sequences the last of those is not a hang, but it is
+    hours, and without progress it is indistinguishable from one.
+
+    Nothing about the search is changed by observing it.
+
+    **What is hoisted out of the loop, and why that is exact.**
+
+    `compute_metrics` is a pure function of the sites it is given, but most of
+    what it does per call does not depend on them: it re-normalises the
+    selectors, re-decides which sequences are non-focal, and re-derives the
+    reference states — all of which are identical for every combination. Worse,
+    `score_state(ref_state, seq[site])` depends only on (site, sequence), so the
+    same `C(n,5) x 5 / n` scores were being recomputed over and over.
+
+    So the comparison set is resolved ONCE, in `sequences` order and with the
+    same predicate, and the per-site scores are computed ONCE per
+    (site, sequence). The search itself is untouched: every combination
+    `itertools.combinations` yields, in that order, with the first minimum
+    winning.
+
+    **The arithmetic is deliberately not simplified.** Each similarity stays
+    `sum(<the five scores>) / 5` and each average stays
+    `sum(<the similarities>) / count`, through the BUILTIN `sum`, because
+    CPython 3.12's `sum` applies Neumaier compensation to floats. Replacing the
+    inner sum with `a + b + c + d + e` changes the result for 596 of the 3,125
+    score tuples this table can produce, which moves scores by one ulp and can
+    hand `best_avg_sites` to a different combination. See
+    `tests/test_five_site.py`.
+    """
     total_combinations_tested = 0
     best_gap_score = None
     best_gap_sites = None
@@ -460,16 +562,57 @@ def find_best_five_site_sets(
             best_avg_sites=None,
         )
 
+    # The sequences `compute_metrics` would have scored, in the same order and
+    # by the same test. Order matters: the average sums them in this sequence.
+    selectors = normalise_focal_strings(focal_strings)
+    comparison = [
+        seq
+        for header, seq in sequences.items()
+        if header != ref_id and not header_matches_focal(header, selectors)
+    ]
+
+    total = comb(len(sites), 5)
+    observer.event(
+        "five_site.start",
+        candidate_sites=len(sites),
+        combinations=total,
+        comparison_sequences=len(comparison),
+    )
+
+    if not comparison:
+        # Same refusal `compute_metrics` raises, just before the first
+        # combination instead of inside it.
+        raise ValueError("No non-focal sequences available for similarity comparison.")
+
+    # The reference state per site: the supplied diagnostic states, or the
+    # reference sequence's own bases. Neither varies with the combination.
+    if diagnostic_states is None:
+        reference_sequence = sequences[ref_id]
+        reference_state = {site: reference_sequence[site] for site in sites}
+    else:
+        reference_state = {site: diagnostic_states[site] for site in sites}
+
+    # One score per (candidate site, comparison sequence), in comparison order.
+    score_column = {
+        site: [score_state(reference_state[site], seq[site]) for seq in comparison]
+        for site in sites
+    }
+
+    comparison_count = len(comparison)
+    ticker = ProgressTicker(observer, STAGE_FIVE_SITE, total=total, check_every=256)
+
     for combo in combinations(sites, 5):
         total_combinations_tested += 1
+        ticker.advance()
 
-        max_similarity, avg_similarity, similarity_gap = compute_metrics(
-            sequences=sequences,
-            ref_id=ref_id,
-            sites=combo,
-            target_string=target_string,
-            diagnostic_states=diagnostic_states,
-        )
+        first, second, third, fourth, fifth = [score_column[site] for site in combo]
+        # `zip` yields the five scores for one sequence, in combination order —
+        # the order `compute_similarity` summed them in.
+        similarities = [
+            sum(scores) / 5 for scores in zip(first, second, third, fourth, fifth)
+        ]
+        max_similarity = max(similarities)
+        avg_similarity = sum(similarities) / comparison_count
 
         if best_gap_score is None or max_similarity < best_gap_score:
             best_gap_score = max_similarity
@@ -478,6 +621,9 @@ def find_best_five_site_sets(
         if best_avg_score is None or avg_similarity < best_avg_score:
             best_avg_score = avg_similarity
             best_avg_sites = combo
+
+    ticker.finish()
+    observer.event("five_site.end", tested=total_combinations_tested)
 
     return FiveSiteResult(
         total_combinations_tested=total_combinations_tested,

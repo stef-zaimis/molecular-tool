@@ -1,0 +1,276 @@
+/*
+ * FOCAL SET LIBRARY — measured from screen 6 of
+ * docs/new/all_pages-20Aug2026.svg (1920x1080):
+ *
+ *   rows            x 1060..1871, h 33, step 41.3
+ *   edge            the light bar at the row's left boundary
+ *   title           x 1124
+ *   [n=x] count     x 1506
+ *   lock / trash    x 1773 / 1829
+ *
+ * The panel is right-anchored at a fixed width, ABOVE the visualizer and
+ * independent of it: dragging the viewer must not move or resize this list.
+ */
+
+.focal-library {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+  font-family: var(--font-mono);
+}
+
+.focal-library__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-library-row);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: var(--h-library-max);
+  /* Its own scroll: a long library must not push the viewer off the page. */
+  overflow-y: auto;
+}
+
+/* ---------------------------------------------------------------- */
+/* Row                                                               */
+/* ---------------------------------------------------------------- */
+
+.focal-row {
+  position: relative;
+  display: grid;
+  /*
+   * Title and pencil share ONE track, so the pencil sits against the rendered
+   * title instead of at the left edge of the [n=x] column.
+   */
+  grid-template-columns:
+    var(--w-source-edge)
+    minmax(0, 1fr)
+    var(--w-library-count)
+    var(--w-library-actions);
+  align-items: center;
+  height: var(--h-library-row);
+  background: var(--c-surface);
+  font-size: var(--fs-tooltip);
+}
+
+.focal-row.is-active {
+  background: var(--c-chrome);
+}
+
+/* The full-height light edge, matching the FASTA rows. */
+.focal-row__edge {
+  align-self: stretch;
+  width: var(--w-source-edge);
+  background: var(--c-muted);
+}
+
+.focal-row.is-active .focal-row__edge {
+  background: var(--c-text);
+}
+
+/*
+ * The name group. The select button is sized to its content, so a short title
+ * leaves the pencil right beside it; a long one shrinks the button (min-width:
+ * 0) and the title ellipsises with the pencil still against it.
+ */
+.focal-row__name-group {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 100%;
+  padding-right: 8px;
+}
+
+.focal-row__select {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  align-items: center;
+  gap: 0 8px;
+  height: 100%;
+  padding: 0 0 0 4px;
+  background: transparent;
+  color: var(--c-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-tooltip);
+  text-align: left;
+}
+
+.focal-row.is-active .focal-row__select {
+  color: var(--c-text);
+  font-weight: var(--fw-bold);
+}
+
+.focal-row:hover .focal-row__select {
+  color: var(--c-text);
+}
+
+/* Already active: clicking is a no-op, so it does not offer a pointer. */
+.focal-row.is-active .focal-row__select {
+  cursor: default;
+}
+
+.focal-row__marker {
+  text-align: center;
+  color: var(--c-text);
+}
+
+.focal-row__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.focal-row__untitled {
+  opacity: 0.7;
+  font-style: italic;
+}
+
+/* The pink asterisk from the design: an inactive draft with unsaved edits. */
+.focal-row__unsaved {
+  color: var(--c-token-nomatch);
+  font-weight: var(--fw-bold);
+}
+
+.focal-row__count {
+  text-align: right;
+  padding-right: 10px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  color: inherit;
+}
+
+.focal-row.is-active .focal-row__count {
+  color: var(--c-text);
+}
+
+.focal-row:not(.is-active) .focal-row__count {
+  color: var(--c-muted);
+}
+
+/* ---------------------------------------------------------------- */
+/* Actions                                                           */
+/* ---------------------------------------------------------------- */
+
+.focal-row__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  padding-right: 8px;
+}
+
+.focal-row__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: transparent;
+  color: var(--c-muted);
+  /*
+   * At rest an INACTIVE row shows nothing; the row reveals its controls grey,
+   * and each lights on its own hover. They stay in the DOM for keyboard reach,
+   * so opacity does the hiding.
+   */
+  opacity: 0;
+  transition: color 90ms linear, opacity 90ms linear;
+}
+
+.focal-row:hover .focal-row__icon,
+.focal-row:focus-within .focal-row__icon {
+  opacity: 1;
+}
+
+/*
+ * The ACTIVE row is NOT special here.
+ *
+ * It used to carry `.focal-row.is-active .focal-row__icon { opacity: 1; color:
+ * muted }`, which is three classes and therefore beat `.focal-row__icon:hover`
+ * (two) — so the active row's controls were always visible and could never
+ * light up. Every row now follows one rule set: hidden at rest, grey on row
+ * hover, lit under the pointer. Adding another override here would recreate
+ * exactly that bug.
+ */
+
+/* A locked row keeps its lock visible: the lock is its state, not a hover hint. */
+.focal-row.is-locked .focal-row__icon--lock {
+  opacity: 1;
+}
+
+.focal-row__icon:hover {
+  color: var(--c-text);
+}
+
+.focal-row__icon--danger:hover {
+  color: var(--c-token-nomatch);
+}
+
+.focal-row__icon--rename {
+  margin-left: 6px;
+}
+
+/* ---------------------------------------------------------------- */
+/* In-row delete confirmation                                        */
+/* ---------------------------------------------------------------- */
+
+/*
+ * Occupies the action area rather than expanding below the row: the list must
+ * not grow, push later rows down, or need scrolling to answer a yes/no about
+ * one of its own rows.
+ */
+.focal-row__confirm {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.focal-row__confirm-action {
+  padding: 1px 7px;
+  background: var(--c-surface);
+  color: var(--c-text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-tooltip);
+  line-height: 1.2;
+}
+
+.focal-row.is-active .focal-row__confirm-action {
+  background: var(--c-surface-hover);
+}
+
+.focal-row__confirm-action:hover {
+  background: var(--c-surface-hover);
+}
+
+.focal-row__confirm-action--danger {
+  color: var(--c-token-nomatch);
+}
+
+.focal-row__confirm-action--danger:hover {
+  background: var(--c-close-hover);
+  color: var(--c-text);
+}
+
+/* ---------------------------------------------------------------- */
+/* Footer                                                            */
+/* ---------------------------------------------------------------- */
+
+.focal-library__footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.focal-library__add {
+  padding: 2px 8px;
+  background: transparent;
+  color: var(--c-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-tooltip);
+}
+
+.focal-library__add:hover {
+  color: var(--c-text);
+}

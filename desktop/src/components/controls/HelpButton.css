@@ -1,0 +1,77 @@
+.help {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.help__dot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--size-help);
+  height: var(--size-help);
+  /* Two-tone artwork: disc = --icon-bg, question mark = --icon-fg. */
+  --icon-bg: var(--c-surface);
+  --icon-fg: var(--c-bg);
+  transition: none;
+}
+
+/*
+ * On a FASTA row the default disc is the row's own colour, so it disappears.
+ * Sampled from page 3 of docs/new/all_pages-20Aug2026.svg, where the seq / bp /
+ * PIS dots are drawn as a #525f72 disc with a #7f92ae question mark — the
+ * inverse of the treatment used on the page background.
+ */
+.help__dot--on-row {
+  --icon-bg: var(--c-bg);
+  --icon-fg: var(--c-muted);
+}
+
+.help__dot:hover,
+.help__dot.is-open {
+  --icon-bg: var(--c-chrome);
+  --icon-fg: var(--c-text);
+}
+
+/*
+ * Portalled into <body>, so it is immune to ancestor overflow clipping and to
+ * the alignment pane's stacking context. Position comes from the component.
+ */
+.help__tooltip {
+  position: fixed;
+  z-index: var(--z-tooltip);
+
+  width: 317px;
+  padding: 11px 14px 13px;
+
+  background: var(--c-chrome);
+  color: var(--c-text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-tooltip);
+  font-weight: var(--fw-regular);
+  line-height: var(--lh-tooltip);
+  text-align: left;
+  white-space: pre-line;
+  box-shadow: var(--shadow-tooltip);
+  pointer-events: none;
+}
+
+/* Pointer notch aimed back at the dot. */
+.help__notch {
+  position: absolute;
+  width: 0;
+  height: 0;
+  border-top: 10px solid transparent;
+  border-bottom: 10px solid transparent;
+}
+
+.help__tooltip--right .help__notch {
+  left: -9px;
+  border-right: 10px solid var(--c-chrome);
+}
+
+.help__tooltip--left .help__notch {
+  right: -9px;
+  border-left: 10px solid var(--c-chrome);
+}

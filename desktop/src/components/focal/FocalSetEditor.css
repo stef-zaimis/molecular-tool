@@ -1,0 +1,265 @@
+/*
+ * The focal-set field — measured from screens 4 and 6 of
+ * docs/new/all_pages-20Aug2026.svg (1920x1080):
+ *
+ *   download button   x  71..104, y 313..346  (33x33)
+ *   box               x 114..914, y 313..456  (800x143)
+ *   undo/redo plate   x 914..1011, y 313..346 (97x33)
+ *
+ * The box is a real editor (CodeMirror 6), so everything here has to keep the
+ * highlight layer and the caret on exactly the same metrics: one font, one
+ * line-height, one padding, set on the content element rather than on a
+ * wrapper.
+ */
+
+.focal-editor {
+  display: flex;
+  align-items: flex-start;
+}
+
+.focal-editor__gutter {
+  flex: 0 0 auto;
+}
+
+.focal-editor__gutter .icon-button {
+  width: 33px;
+  height: 34px;
+  color: var(--c-chrome);
+  --icon-bg: var(--c-chrome);
+  --icon-fg: var(--c-text);
+}
+
+.focal-editor__gutter .icon-button:hover:not(:disabled) {
+  --icon-bg: var(--c-chrome-hover);
+}
+
+.focal-editor__gutter .icon-button:disabled {
+  --icon-bg: var(--c-surface);
+  --icon-fg: var(--c-bg);
+}
+
+/* ---------------------------------------------------------------- */
+/* The editable surface                                               */
+/* ---------------------------------------------------------------- */
+
+/*
+ * Height is state, not a CSS `resize`.
+ *
+ * The native grip is a browser affordance drawn in the browser's own style,
+ * it allows horizontal dragging the design does not want, and it sits exactly
+ * where the scrollbar is. The box is sized from a prop instead and the grip
+ * below is our own.
+ */
+.focal-editor__box {
+  position: relative;
+  flex: 0 1 var(--w-focal-box);
+  width: var(--w-focal-box);
+  min-height: var(--h-focal-box-min);
+  max-height: var(--h-focal-box-max);
+  margin-left: 12px;
+  margin-right: 2px;
+  background: var(--c-surface);
+  overflow: hidden;
+}
+
+/* ---------------------------------------------------------------- */
+/* Resize grip                                                        */
+/* ---------------------------------------------------------------- */
+
+/*
+ * Bottom-right, in the design's own idiom: a small filled triangle. Vertical
+ * only, and inset past the scrollbar lane so the two never fight for the
+ * same pixels.
+ */
+.focal-editor__grip {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: var(--size-focal-grip);
+  height: var(--size-focal-grip);
+  cursor: ns-resize;
+  touch-action: none;
+  background: transparent;
+  padding: 0;
+  border: none;
+}
+
+.focal-editor__grip::after {
+  content: '';
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 0;
+  height: 0;
+  border-left: calc(var(--size-focal-grip) - 6px) solid transparent;
+  border-bottom: calc(var(--size-focal-grip) - 6px) solid var(--c-muted);
+  transition: border-bottom-color 90ms linear;
+}
+
+.focal-editor__grip:hover::after,
+.focal-editor__grip:focus-visible::after {
+  border-bottom-color: var(--c-text);
+}
+
+.focal-editor__cm {
+  height: 100%;
+}
+
+.focal-editor__cm .cm-editor {
+  height: 100%;
+  background: transparent;
+  color: var(--c-token-neutral);
+  font-family: var(--font-mono);
+  font-size: var(--fs-token);
+}
+
+/* The focus ring belongs to the box, not to CodeMirror's default outline. */
+.focal-editor__cm .cm-editor.cm-focused {
+  outline: none;
+}
+
+.focal-editor__box:focus-within {
+  box-shadow: inset 0 0 0 1px var(--c-focus-ring);
+}
+
+.focal-editor__cm .cm-scroller {
+  font-family: var(--font-mono);
+  line-height: 1.55;
+  overflow: auto;
+}
+
+/*
+ * The editor scrolls with the app's scrollbar, not the browser's. CodeMirror
+ * owns this element, so the rule has to target `.cm-scroller` directly rather
+ * than relying on the `.themed-scroll` class the rest of the app uses.
+ */
+.focal-editor__cm .cm-scroller::-webkit-scrollbar {
+  width: var(--w-scrollbar);
+  height: var(--w-scrollbar);
+}
+
+.focal-editor__cm .cm-scroller::-webkit-scrollbar-track {
+  background: var(--c-scroll-track);
+  border-radius: var(--radius-scrollbar);
+  margin: 6px 0;
+}
+
+.focal-editor__cm .cm-scroller::-webkit-scrollbar-thumb {
+  background: var(--c-scroll-thumb);
+  border-radius: var(--radius-scrollbar);
+  min-height: 28px;
+}
+
+.focal-editor__cm .cm-scroller::-webkit-scrollbar-thumb:hover {
+  background: var(--c-scroll-thumb-hover);
+}
+
+.focal-editor__cm .cm-scroller::-webkit-scrollbar-thumb:active {
+  background: var(--c-scroll-thumb-active);
+}
+
+.focal-editor__cm .cm-scroller::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.focal-editor__cm .cm-content {
+  padding: 13px 22px 13px 14px;
+  caret-color: var(--c-text);
+}
+
+.focal-editor__cm .cm-line {
+  padding: 0;
+}
+
+.focal-editor__cm .cm-cursor {
+  border-left-color: var(--c-text);
+}
+
+.focal-editor__cm .cm-selectionBackground,
+.focal-editor__cm .cm-editor.cm-focused .cm-selectionBackground,
+.focal-editor__cm ::selection {
+  background: var(--c-surface-hover);
+}
+
+.focal-editor__cm .cm-placeholder {
+  color: var(--c-muted);
+  opacity: 0.75;
+}
+
+/* A locked set stays readable and selectable, but takes no caret. */
+.focal-editor__cm .cm-editor:not(.cm-focused) .cm-cursor {
+  visibility: hidden;
+}
+
+/* ---------------------------------------------------------------- */
+/* Entry tones                                                        */
+/* ---------------------------------------------------------------- */
+
+/*
+ * Four presence states plus two editing states.
+ *
+ *   match     — present in the selected scope
+ *   elsewhere — present in the project, but not in the SELECTED file
+ *   missing   — present in none of the linked files
+ *   unknown   — a required source is unavailable, so presence is unproven
+ *   pending   — not answered for yet
+ *   duplicate — a repeat of an earlier entry; shown, but not a second member
+ *
+ * `unknown` is deliberately not red: "we could not check" and "it is not
+ * there" send the user to different problems. `pending` is neutral for the
+ * same reason — a set must not flash red on its way to being checked.
+ */
+.cm-focal--match {
+  color: var(--c-token-match);
+}
+
+.cm-focal--elsewhere {
+  color: var(--c-token-elsewhere);
+}
+
+.cm-focal--missing {
+  color: var(--c-token-nomatch);
+}
+
+.cm-focal--unknown {
+  color: var(--c-token-unknown);
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+
+.cm-focal--pending {
+  color: var(--c-token-neutral);
+}
+
+.cm-focal--duplicate {
+  color: var(--c-muted);
+  text-decoration: line-through;
+}
+
+/* ---------------------------------------------------------------- */
+/* Undo / redo panel                                                  */
+/* ---------------------------------------------------------------- */
+
+.focal-editor__history {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 37px;
+  padding: 0 6px;
+  background: var(--c-chrome);
+}
+
+.focal-editor__history .icon-button {
+  color: var(--c-text);
+}
+
+.focal-editor__history .icon-button:hover:not(:disabled) {
+  color: var(--c-muted);
+}
+
+/* Matches the design, where redo sits dimmed until there is something to redo. */
+.focal-editor__history .icon-button:disabled {
+  color: var(--c-bg);
+  opacity: 1;
+}

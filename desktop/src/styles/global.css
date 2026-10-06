@@ -1,0 +1,220 @@
+/* Global reset + base shell styling. Tokens only — no literals. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+/*
+ * Workspace scaling for Windows DPI. `--ui-zoom` is 1 at 1920 CSS px and below
+ * that it is the ratio to 1920, so the app always lays out in the frame its
+ * measurements came from and is painted smaller. The width/height calc undoes
+ * the zoom for the root box itself, so the shell still fills the window
+ * exactly rather than covering `zoom` of it.
+ *
+ * See src/app/uiScale.ts for why this is scaling rather than a second layout.
+ */
+:root {
+  --ui-zoom: 1;
+}
+
+#root {
+  zoom: var(--ui-zoom);
+  width: calc(100vw / var(--ui-zoom));
+  height: calc(100vh / var(--ui-zoom));
+}
+
+body {
+  background: var(--c-bg);
+  color: var(--c-text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-base);
+  line-height: var(--lh-normal);
+  font-weight: var(--fw-regular);
+  overflow: hidden;
+  /* A desktop app, not a web page: no text selection except in fields. */
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+/*
+ * Typography, centrally.
+ *
+ * Form controls do NOT inherit `font-family` from their ancestors — the UA
+ * stylesheet gives `input`, `button`, `select`, `textarea` and `optgroup` a
+ * system font of their own. Anything the application draws must be JetBrains
+ * Mono, so the inheritance is forced here once rather than repeated (and
+ * forgotten) per component.
+ *
+ * The list is deliberately explicit: it is what the audit found, and adding a
+ * control type here is cheaper than discovering a stray system font later.
+ */
+input,
+button,
+select,
+textarea,
+optgroup,
+option {
+  font-family: var(--font-mono);
+}
+
+/*
+ * CodeMirror sets its own font on the editor and the scroller. Both are
+ * overridden at the component level, but this catches any surface it adds.
+ */
+.cm-editor,
+.cm-editor .cm-content,
+.cm-editor .cm-scroller,
+.cm-editor .cm-placeholder,
+.cm-editor .cm-tooltip {
+  font-family: var(--font-mono);
+}
+
+input,
+textarea,
+[contenteditable] {
+  user-select: text;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: default;
+}
+
+input {
+  font: inherit;
+  color: inherit;
+  border: none;
+  background: none;
+}
+
+/* Keyboard focus must always be visible; pointer focus must not add noise. */
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: var(--border-focus) solid var(--c-focus-ring);
+  outline-offset: 1px;
+}
+
+/* Regions the OS should treat as window drag handles. */
+.drag-region {
+  -webkit-app-region: drag;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.app-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Visually hidden but available to assistive tech. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/*
+ * Panel scrollbars.
+ *
+ * Modelled on the "scroller" artwork in docs/02-project-creation.svg: an 8px
+ * pill with fully rounded ends, a dark track and a lighter thumb over it. The
+ * track is inset top and bottom, as it is in the design, so it reads as a rail
+ * inside the panel rather than a browser chrome edge.
+ *
+ * NOTE: the standard scrollbar-width / scrollbar-color properties are
+ * deliberately NOT set. In modern Chromium they take precedence over the
+ * ::-webkit-scrollbar pseudo-elements, which would discard the rounded thumb
+ * and give us the default scrollbar this design is trying to avoid.
+ */
+.themed-scroll::-webkit-scrollbar {
+  width: var(--w-scrollbar);
+  height: var(--w-scrollbar);
+}
+
+.themed-scroll::-webkit-scrollbar-track {
+  background: var(--c-scroll-track);
+  border-radius: var(--radius-scrollbar);
+  margin: 6px 0;
+}
+
+.themed-scroll::-webkit-scrollbar-thumb {
+  background: var(--c-scroll-thumb);
+  border-radius: var(--radius-scrollbar);
+  /* Keeps the thumb grabbable on a very long page. */
+  min-height: 28px;
+}
+
+.themed-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--c-scroll-thumb-hover);
+}
+
+.themed-scroll::-webkit-scrollbar-thumb:active {
+  background: var(--c-scroll-thumb-active);
+}
+
+.themed-scroll::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Placeholder body for a selected analysis that has no workspace yet. */
+.not-built {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  height: 100%;
+  padding: var(--sp-6);
+  text-align: center;
+  opacity: 0.5;
+}
+
+.not-built__title {
+  margin: 0;
+  font-size: var(--fs-base);
+  line-height: 1.2;
+}
+
+.not-built__body {
+  margin: 0;
+  max-width: 640px;
+  font-size: var(--fs-tooltip);
+  line-height: 1.4;
+}

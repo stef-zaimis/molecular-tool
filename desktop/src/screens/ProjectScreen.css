@@ -1,0 +1,161 @@
+/*
+ * Page 3 — one screen for both project states.
+ *
+ * Measured from docs/new/all_pages-20Aug2026.svg (1920x1080):
+ *   label column right edge   x 350
+ *   fields                    x 370..915, action button to x 1028
+ *   project heading           x 63
+ *   SELECT ANALYSES label     x 75, rows from y ~446, step 53
+ *
+ * The two states differ only in the title row and in whether SELECT ANALYSES
+ * is present; everything else is the same markup, so creating a project does
+ * not move anything on screen.
+ */
+
+.project__body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 22px 48px 40px var(--pad-project-page-x);
+  overflow: hidden auto;
+}
+
+/*
+ * The label column is measured from the WINDOW edge (right edge at x=350), not
+ * from the page padding, so these rows step back out of it. The heading and the
+ * FASTA table keep the padding, which is where the reference puts them.
+ */
+.project__row {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-label-field);
+  margin-left: calc(-1 * var(--pad-project-page-x));
+}
+
+.project__label {
+  flex: 0 0 var(--w-label-column);
+  width: var(--w-label-column);
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: var(--fs-base);
+  line-height: 1;
+  color: var(--c-text);
+  white-space: nowrap;
+}
+
+.project__hint {
+  color: var(--c-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-tooltip);
+}
+
+/*
+ * The refusal from `project.validateFastaCandidate`, inline under the picker.
+ * Indented to the field column so it reads as belonging to that control.
+ */
+.project__source-error {
+  margin: -10px 0 0;
+  padding-left: calc(
+    var(--w-label-column) + var(--gap-label-field) - var(--pad-project-page-x)
+  );
+  color: var(--c-token-nomatch);
+  font-family: var(--font-mono);
+  font-size: var(--fs-tooltip);
+  line-height: 1.35;
+}
+
+/* ---------------------------------------------------------------- */
+/* Saved title                                                       */
+/* ---------------------------------------------------------------- */
+
+.project__title-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 44px;
+}
+
+.project__title {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-bold);
+  line-height: 1.1;
+  color: var(--c-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 60%;
+}
+
+.project__title-edit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  background: transparent;
+  color: var(--c-muted);
+  transition: color 90ms linear;
+}
+
+.project__title-edit:hover {
+  color: var(--c-text);
+}
+
+.project__title-cancel {
+  padding: 4px 10px;
+  background: var(--c-surface);
+  color: var(--c-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-tooltip);
+}
+
+.project__title-cancel:hover {
+  background: var(--c-surface-hover);
+  color: var(--c-text);
+}
+
+/* ---------------------------------------------------------------- */
+/* Analyses                                                          */
+/* ---------------------------------------------------------------- */
+
+.project__analyses {
+  display: flex;
+  align-items: flex-start;
+  gap: 60px;
+  margin-top: 22px;
+}
+
+.project__analyses-label {
+  /* Optically centre the section label on the first checkbox row. */
+  padding-top: 7px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-base);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.project__analyses-list {
+  display: flex;
+  flex-direction: column;
+  gap: 19px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+
+.project__analysis-row {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  min-width: 0;
+}
+
+.project__analysis-note {
+  color: var(--c-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-tooltip);
+  white-space: nowrap;
+}

@@ -1,0 +1,322 @@
+/*
+ * FASTA rows — measured from page 3 of docs/new/all_pages-20Aug2026.svg.
+ *
+ * Row-local geometry, with x measured from the light left edge:
+ *
+ *   edge          x   0..11    full row height, --c-muted
+ *   row body      x  11..1806  --c-surface
+ *   [N]           x  24        muted, ~21px
+ *   name          x  75        --c-text, --fs-base
+ *   seq value     right edge at 1090   unit + help follow (first row only)
+ *   bp value      right edge at 1278
+ *   PIS value     right edge at 1451
+ *   actions       end at 1781
+ *   row height 33, gap 8
+ *
+ * The columns are FIXED widths, which is what lets the first row carry the
+ * unit labels while the numbers below still line up under it.
+ */
+
+.source-table {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: var(--w-source-table);
+  max-width: 100%;
+}
+
+.source-table__banner {
+  margin: 0;
+  padding: 6px 10px;
+  background: var(--c-chrome);
+  color: var(--c-token-nomatch);
+  font-family: var(--font-mono);
+  font-size: var(--fs-tooltip);
+  line-height: 1.35;
+}
+
+.source-table__empty {
+  margin: 0;
+  color: var(--c-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-tooltip);
+  line-height: 1.35;
+}
+
+.source-table__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-source-row);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* ---------------------------------------------------------------- */
+/* Row                                                                */
+/* ---------------------------------------------------------------- */
+
+.source-row {
+  display: flex;
+  flex-direction: column;
+  font-family: var(--font-mono);
+}
+
+.source-row__body {
+  display: grid;
+  /*
+   * The name and its pencil share ONE track (`minmax(0, 1fr)`), which is what
+   * keeps the pencil against the name instead of against a column edge. The
+   * metric tracks are fixed, so the numbers still line up down the list.
+   */
+  grid-template-columns:
+    var(--w-source-edge)
+    var(--w-source-index)
+    minmax(0, 1fr)
+    var(--w-source-metric-1)
+    var(--w-source-metric-2)
+    var(--w-source-metric-3)
+    var(--w-source-actions);
+  align-items: center;
+  gap: 0;
+  height: var(--h-source-row);
+  background: var(--c-surface);
+}
+
+/*
+ * The light left edge. It IS the row's left boundary — full height, no inset —
+ * so it scales with the row rather than floating inside it.
+ */
+.source-row__edge {
+  grid-column: 1;
+  align-self: stretch;
+  width: var(--w-source-edge);
+  background: var(--c-muted);
+}
+
+.source-row--warning .source-row__edge {
+  background: var(--c-token-elsewhere);
+}
+
+.source-row--error .source-row__edge {
+  background: var(--c-token-nomatch);
+}
+
+.source-row__index {
+  padding-left: 13px;
+  color: var(--c-muted);
+  font-size: var(--fs-source-index);
+  white-space: nowrap;
+}
+
+/*
+ * Name + pencil, inline.
+ *
+ * The name is a flex item sized to its content, so the pencil begins exactly
+ * where the rendered text ends. When the name is too long for the track the
+ * name — not the group — is what shrinks, so the pencil stays beside the
+ * ellipsis and the group never reaches the seq column.
+ */
+.source-row__name-group {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding-left: 12px;
+  /* Room for the pencil plus a little air before the first metric. */
+  padding-right: 12px;
+}
+
+.source-row__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--c-text);
+  font-size: var(--fs-base);
+}
+
+/* ---------------------------------------------------------------- */
+/* Metrics                                                            */
+/* ---------------------------------------------------------------- */
+
+/*
+ * Value right-aligned in a fixed column, unit and help hanging off its right.
+ * The unit sits in the padding, so adding it to the first row cannot shift the
+ * numbers underneath.
+ */
+.source-row__metric {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: var(--pad-source-unit);
+  color: var(--c-text);
+  font-size: var(--fs-base);
+  white-space: nowrap;
+}
+
+.source-row__metric--empty {
+  color: var(--c-muted);
+}
+
+.source-row__value {
+  font-variant-numeric: tabular-nums;
+}
+
+.source-row__unit {
+  position: absolute;
+  left: calc(100% - var(--pad-source-unit) + 10px);
+  color: var(--c-muted);
+}
+
+/* The help dot follows the unit label, both only on the first row. */
+.source-row__metric .help {
+  position: absolute;
+  left: calc(100% - var(--pad-source-unit) + 10px + var(--w-source-unit-text));
+}
+
+/* ---------------------------------------------------------------- */
+/* Actions                                                            */
+/* ---------------------------------------------------------------- */
+
+.source-row__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  padding-right: 25px;
+}
+
+/*
+ * At rest the actions are invisible; the row reveals them grey, and each one
+ * lights on its own hover. Same pattern as the focal-set library, so the two
+ * lists behave alike.
+ */
+.source-row__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--size-source-icon);
+  height: var(--size-source-icon);
+  background: transparent;
+  color: var(--c-muted);
+  opacity: 0;
+  transition: color 90ms linear, opacity 90ms linear;
+}
+
+.source-row:hover .source-row__icon,
+.source-row:focus-within .source-row__icon {
+  opacity: 1;
+}
+
+/* A locked row keeps its lock on show even without hover: the lock IS the
+   row's state, not a hover affordance. */
+.source-row.is-locked .source-row__icon--lock {
+  opacity: 1;
+}
+
+/*
+ * Hover lights the control under the pointer. The rename pencil is included
+ * even though it is disabled in this build: it is part of the row's hover
+ * language, and it keeps `cursor: default` and a tooltip that says renaming is
+ * not available yet, so it never claims to work.
+ */
+.source-row__icon:hover {
+  color: var(--c-text);
+}
+
+.source-row__icon--danger:hover {
+  color: var(--c-token-nomatch);
+}
+
+.source-row__icon:disabled {
+  cursor: default;
+}
+
+/* The rename pencil sits against the name and follows the same reveal. */
+.source-row__icon--rename {
+  flex: 0 0 auto;
+  margin-left: 6px;
+}
+
+/* ---------------------------------------------------------------- */
+/* In-row removal confirmation                                        */
+/* ---------------------------------------------------------------- */
+
+.source-row__confirm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.source-row__confirm-action {
+  padding: 2px 8px;
+  background: var(--c-chrome);
+  color: var(--c-text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-tooltip);
+  line-height: 1.2;
+}
+
+.source-row__confirm-action:hover {
+  background: var(--c-chrome-hover);
+}
+
+.source-row__confirm-action--danger:hover {
+  background: var(--c-close-hover);
+}
+
+/* ---------------------------------------------------------------- */
+/* Status line                                                        */
+/* ---------------------------------------------------------------- */
+
+.source-row__status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0 4px calc(var(--w-source-edge) + 13px);
+  font-family: var(--font-mono);
+  font-size: var(--fs-tooltip);
+}
+
+.source-row__state {
+  font-weight: var(--fw-bold);
+  text-transform: uppercase;
+}
+
+.source-row--error .source-row__state {
+  color: var(--c-token-nomatch);
+}
+
+.source-row--warning .source-row__state {
+  color: var(--c-token-elsewhere);
+}
+
+.source-row__detail {
+  color: var(--c-muted);
+}
+
+.source-table__footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.source-row__action {
+  padding: 3px 10px;
+  background: var(--c-surface);
+  color: var(--c-text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-tooltip);
+  line-height: 1.4;
+  transition: background-color 90ms linear;
+}
+
+.source-row__action:hover:not(:disabled) {
+  background: var(--c-surface-hover);
+}
+
+.source-row__action:disabled {
+  color: var(--c-muted);
+  cursor: default;
+}

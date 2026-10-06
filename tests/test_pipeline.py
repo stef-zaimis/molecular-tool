@@ -16,7 +16,7 @@ def test_run_pipeline_core_creates_outputs(tmp_path: Path) -> None:
 
     result = run_pipeline_core(
         fasta_path=fasta,
-        target_string="focal",
+        focal_strings="focal",
         output_dir=tmp_path,
     )
 
@@ -43,7 +43,7 @@ def test_run_pipeline_core_uses_next_available_filename(tmp_path: Path) -> None:
 
     result = run_pipeline_core(
         fasta_path=fasta,
-        target_string="focal",
+        focal_strings="focal",
         output_dir=tmp_path,
     )
 

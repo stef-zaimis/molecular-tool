@@ -1,0 +1,196 @@
+"""
+Focal-set selection.
+
+THE single place that decides which FASTA headers belong to the focal set.
+
+Before this module existed the rule `target_string in header` was written out
+independently in four places (`fasta_io.split_focal_headers`,
+`core.find_dmc_information`, `core.compute_metrics`, `excel.build_sheet`), which
+meant any change to focal semantics had to be made four times and kept in step
+by hand. Every one of those call sites now routes through `header_matches_focal`.
+
+Semantics, unchanged from the original single-string behaviour except for the
+addition of multiple selectors:
+
+- A header belongs to the focal set when ANY focal string occurs literally
+  within it (logical OR across the selectors).
+- Matching is CASE-SENSITIVE literal substring containment. It is not exact-id
+  equality, not case-insensitive, and not a pattern match.
+- Selectors are stripped of surrounding whitespace, as the original pipeline
+  did, and are then deduplicated while preserving first-seen order.
+- An empty (or whitespace-only) selector is invalid: under substring semantics
+  it would match every header, which is never what a caller means.
+
+A single `str` is still accepted everywhere a selector list is, so existing
+callers and tests keep working; it is treated as a one-element list.
+"""
+
+from collections.abc import Sequence
+
+__all__ = [
+    "ExactHeaders",
+    "FocalSelector",
+    "focal_label",
+    "header_matches_focal",
+    "matching_focal_strings",
+    "normalise_focal_strings",
+    "partition_headers",
+]
+
+
+class ExactHeaders(tuple):
+    """
+    A focal set expressed as EXACT complete headers rather than substrings.
+
+    Project focal sets resolve a search query to complete headers once, at
+    selection time; membership afterwards is exact identity. Without this
+    marker the resolved headers would be fed back through substring matching
+    and a header such as ``ABC123_extra`` would be dragged in by the entry
+    ``ABC123``, which is not what the user selected.
+
+    It is a tuple subclass so it flows through the existing selector plumbing
+    untouched: `normalise_focal_strings` passes it through and
+    `header_matches_focal` recognises it. Every scientific and output path
+    therefore shares one membership rule.
+    """
+
+    def __new__(cls, headers: Sequence[str]) -> "ExactHeaders":
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for raw in headers:
+            header = str(raw)
+            if not header.strip():
+                raise ValueError("Focal strings cannot be empty.")
+            if header in seen:
+                continue
+            seen.add(header)
+            cleaned.append(header)
+        if not cleaned:
+            raise ValueError("No identifier string entered.")
+        return super().__new__(cls, cleaned)
+
+    @property
+    def members(self) -> frozenset[str]:
+        """
+        The headers as a set, built once per instance.
+
+        `header_matches_focal` is called per header per sequence — and, before
+        the five-site search was reworked, per header per COMBINATION — so
+        rebuilding the frozenset on every lookup made an O(1) membership test
+        cost O(len(self)). A project focal set of several hundred headers made
+        that very visible.
+
+        Caching is sound because the instance is a tuple: its contents cannot
+        change, so the set can never go stale. It is populated lazily rather
+        than in `__new__` because `tuple.__new__(ExactHeaders, ...)` — which is
+        how `copyreg` rebuilds a tuple subclass under old pickle protocols —
+        bypasses `__new__` entirely; filling it here covers every construction
+        path. Two threads racing would simply build the same set twice.
+        """
+        try:
+            return self._members
+        except AttributeError:
+            members = frozenset(self)
+            self._members = members
+            return members
+
+
+#: A single selector, a list of them, or a resolved ExactHeaders selection.
+FocalSelector = str | Sequence[str]
+
+
+def normalise_focal_strings(
+    value: FocalSelector,
+    *,
+    empty_message: str = "No identifier string entered.",
+) -> list[str]:
+    """
+    Coerce a selector argument into a clean, ordered, duplicate-free list.
+
+    `empty_message` lets callers keep their existing user-facing wording for the
+    "nothing supplied" case rather than inventing a new one.
+
+    Raises:
+        ValueError: if any individual selector is empty/whitespace-only, or if
+            no selectors remain.
+    """
+    candidates: list[str]
+
+    if isinstance(value, ExactHeaders):
+        # Already resolved, already deduplicated, already validated.
+        return value
+
+    if isinstance(value, str):
+        candidates = [value]
+    else:
+        candidates = [str(item) for item in value]
+
+    if not candidates:
+        raise ValueError(empty_message)
+
+    seen: set[str] = set()
+    cleaned: list[str] = []
+
+    for raw in candidates:
+        selector = raw.strip()
+
+        if not selector:
+            raise ValueError("Focal strings cannot be empty.")
+
+        if selector in seen:
+            continue
+
+        seen.add(selector)
+        cleaned.append(selector)
+
+    if not cleaned:
+        raise ValueError(empty_message)
+
+    return cleaned
+
+
+def header_matches_focal(header: str, focal_strings: Sequence[str]) -> bool:
+    """
+    Is this header in the focal set?
+
+    Exact identity for an `ExactHeaders` selection, literal substring
+    containment (OR across selectors) otherwise.
+    """
+    if isinstance(focal_strings, ExactHeaders):
+        return header in focal_strings.members
+    return any(selector in header for selector in focal_strings)
+
+
+def matching_focal_strings(header: str, focal_strings: Sequence[str]) -> list[str]:
+    """Which selectors matched this header. Useful for reporting, not for filtering."""
+    if isinstance(focal_strings, ExactHeaders):
+        return [header] if header in focal_strings.members else []
+    return [selector for selector in focal_strings if selector in header]
+
+
+def partition_headers(
+    headers: Sequence[str],
+    focal_strings: Sequence[str],
+) -> tuple[list[str], list[str]]:
+    """Split headers into (focal, non-focal), preserving input order in both."""
+    focal: list[str] = []
+    non_focal: list[str] = []
+
+    for header in headers:
+        if header_matches_focal(header, focal_strings):
+            focal.append(header)
+        else:
+            non_focal.append(header)
+
+    return focal, non_focal
+
+
+def focal_label(focal_strings: Sequence[str]) -> str:
+    """
+    Human-readable name for the focal set, used in report text and in the
+    consensus FASTA record names.
+
+    A single selector formats exactly as it did before multi-selector support,
+    so single-string runs produce byte-identical output.
+    """
+    return "+".join(focal_strings)
