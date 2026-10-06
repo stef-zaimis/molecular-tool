@@ -66,6 +66,7 @@ const noopApi: DesktopApi = {
     replaceFocalEntries: () => Promise.resolve(unavailable),
     replaceFocalEntryHeaders: () => Promise.resolve(unavailable),
     saveFocalSet: () => Promise.resolve(unavailable),
+    cancelDiagnosis: () => Promise.resolve(unavailable),
     headerPresence: () => Promise.resolve(unavailable),
     matchFocalHeaders: () => Promise.resolve(unavailable),
     resolveFocalAddQuery: () => Promise.resolve(unavailable),

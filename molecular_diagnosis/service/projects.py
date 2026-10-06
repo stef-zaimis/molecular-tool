@@ -20,8 +20,9 @@ from molecular_diagnosis.project.service import (
     ProjectService,
     validate_fasta_candidate,
 )
-from molecular_diagnosis.progress import STAGE_STARTING
+from molecular_diagnosis.progress import STAGE_STARTING, RunCancelled
 from molecular_diagnosis.service.diagnostics import (
+    CANCELLATIONS,
     RunDiagnostics,
     environment_snapshot,
     log_line,
@@ -29,7 +30,13 @@ from molecular_diagnosis.service.diagnostics import (
 )
 from molecular_diagnosis.service.errors import ErrorCode, ServiceError
 
-__all__ = ["PROJECT_METHODS", "close_open_project", "current_project"]
+__all__ = [
+    "OUT_OF_BAND_METHODS",
+    "PROJECT_METHODS",
+    "cancel_run",
+    "close_open_project",
+    "current_project",
+]
 
 _open: dict[str, ProjectService] = {}
 
@@ -495,7 +502,11 @@ def run_project_molecular_diagnosis(params: dict[str, Any]) -> dict[str, Any]:
     resume = params.get("resume")
     token = params.get("runToken")
 
-    run = RunDiagnostics(new_run_id(), run_token=token if isinstance(token, str) else None)
+    run = RunDiagnostics(
+        new_run_id(),
+        run_token=token if isinstance(token, str) else None,
+        cancellations=CANCELLATIONS,
+    )
     log_line(
         "run.start",
         run=run.run_id,
@@ -518,6 +529,16 @@ def run_project_molecular_diagnosis(params: dict[str, Any]) -> dict[str, Any]:
                 observer=run,
             )
         )
+    except RunCancelled:
+        # The user's Stop, honoured. Its own outcome, never a failure: nothing
+        # went wrong, and no result of this run is valid.
+        log_line(
+            "run.cancelled",
+            run=run.run_id,
+            stage=run.last_stage,
+            elapsedMs=run.elapsed_ms,
+        )
+        raise ServiceError(ErrorCode.RUN_CANCELLED, "Analysis stopped.") from None
     except ServiceError as error:
         # An expected refusal: the code and the stage it happened in, no
         # traceback. The stage is the part that is hard to guess afterwards.
@@ -533,9 +554,34 @@ def run_project_molecular_diagnosis(params: dict[str, Any]) -> dict[str, Any]:
     except BaseException as error:
         run.failure(error)
         raise
+    finally:
+        # Whatever happened, this token's stop request (if any) is spent.
+        CANCELLATIONS.discard(run.run_token)
 
     log_line("run.end", run=run.run_id, ok=True, elapsedMs=run.elapsed_ms)
     return result
+
+
+def cancel_run(params: dict[str, Any]) -> dict[str, Any]:
+    """
+    Ask the run with this `runToken` to stop at its next checkpoint.
+
+    OUT OF BAND: `service.__main__` answers this from its stdin reader thread
+    the moment it arrives, because the request loop is busy with the very run
+    it is meant to stop. It only marks the token; the run itself notices,
+    unwinds, and answers its own request with `RUN_CANCELLED`.
+
+    Idempotent, and harmless for a token that is unknown or already finished:
+    tokens are unique per run, so a late cancel can never stop a later run.
+    """
+    token = _require_str(params, "runToken")
+    CANCELLATIONS.request(token)
+    log_line("run.cancel.requested", runToken=token)
+    return {"runToken": token, "cancelRequested": True}
+
+
+#: Methods the stdio loop handles immediately, outside the sequential queue.
+OUT_OF_BAND_METHODS = {"control.cancelRun": cancel_run}
 
 
 def diagnostics_environment(_params: dict[str, Any]) -> dict[str, Any]:
@@ -551,6 +597,8 @@ def diagnostics_environment(_params: dict[str, Any]) -> dict[str, Any]:
 
 PROJECT_METHODS = {
     "diagnostics.environment": diagnostics_environment,
+    # Also handled out of band by the stdio loop; listed so `dispatch` knows it.
+    "control.cancelRun": cancel_run,
     "project.create": create_project,
     "project.open": open_project,
     "project.close": close_project,

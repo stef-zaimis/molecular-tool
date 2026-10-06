@@ -44,6 +44,8 @@ export type BackendErrorCode =
   | 'FOCAL_ENTRIES_NOT_IN_FILE'
   | 'FOCAL_ENTRIES_NOT_IN_SCOPE'
   | 'FOCAL_PRESENCE_UNKNOWN'
+  | 'RUN_CANCELLED'
+  | 'RESUME_INPUTS_CHANGED'
   | 'COMPARISON_OVERLAPS_FOCAL'
   | 'COMPARISON_ENTRIES_NOT_IN_FILE'
   | 'COMPARISON_ENTRIES_NOT_IN_SCOPE'
@@ -129,6 +131,12 @@ export interface DiagnosisResumeState {
   readonly startCombinationLength: number;
   readonly diagnosticCombinations: readonly (readonly number[])[];
   readonly combinationsTestedByLength: Readonly<Record<string, number>>;
+  /**
+   * Project runs only: a digest of the inputs that produced this state. The
+   * backend refuses the continuation (`RESUME_INPUTS_CHANGED`) against any
+   * other inputs. Opaque here; it is handed back unchanged.
+   */
+  readonly inputsFingerprint?: string;
 }
 
 export interface MolecularDiagnosisRequest {

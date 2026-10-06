@@ -41,6 +41,9 @@ class ErrorCode:
     INVALID_PARAMETER = "INVALID_PARAMETER"
     UNKNOWN = "UNKNOWN"
 
+    #: The user stopped the run. An outcome, not a failure.
+    RUN_CANCELLED = "RUN_CANCELLED"
+
 
 class ServiceError(Exception):
     """

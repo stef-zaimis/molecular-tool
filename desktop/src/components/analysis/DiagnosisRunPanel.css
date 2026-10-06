@@ -48,6 +48,32 @@
   opacity: 0.6;
 }
 
+/*
+ * Stop: secondary to Run, so outlined rather than filled, but the same height
+ * and type so the two read as one control group while a run is going.
+ */
+.run-panel__stop {
+  height: 44px;
+  padding: 0 18px;
+  background: transparent;
+  color: var(--c-text);
+  border: 1px solid var(--c-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-base);
+  line-height: 1;
+  transition: background-color 90ms linear, border-color 90ms linear;
+}
+
+.run-panel__stop:hover:not(:disabled) {
+  background: var(--c-surface-hover);
+  border-color: var(--c-text);
+}
+
+.run-panel__stop:disabled {
+  color: var(--c-muted);
+  cursor: progress;
+}
+
 .run-panel__run--small {
   height: 34px;
   padding: 0 14px;

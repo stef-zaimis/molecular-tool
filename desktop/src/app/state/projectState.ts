@@ -147,14 +147,30 @@ export type DiagnosisRunState =
       readonly startedAt: number;
       /** The most recent progress notification, or null before the first. */
       readonly progress: DiagnosisProgress | null;
+      /**
+       * Stop was asked for and the backend has not answered the run yet. The
+       * run stays `running` until it does: a cancelled run is only over when
+       * the backend says so, which is what stops a new run being queued
+       * behind one that is still unwinding.
+       */
+      readonly stopping: boolean;
+      /** The analysis inputs this run was started with (see `runInputKey`). */
+      readonly inputKey: string;
     }
   | {
       readonly status: 'succeeded';
       readonly result: ProjectDiagnosisResult;
       /** Set when the search stopped only because it hit the maximum size. */
       readonly pendingContinuation: DiagnosisResumeState | null;
+      /**
+       * The inputs that produced `pendingContinuation`. Continuing is only
+       * offered while the current inputs still match.
+       */
+      readonly inputKey: string;
     }
-  | { readonly status: 'failed'; readonly error: BackendError };
+  | { readonly status: 'failed'; readonly error: BackendError }
+  /** The user stopped the run. Not a failure, and nothing from it is a result. */
+  | { readonly status: 'cancelled' };
 
 /**
  * The persistent project this session has open.
@@ -401,10 +417,18 @@ export type AppAction =
   /* scope --------------------------------------------------------------- */
   | { type: 'setFastaScope'; scope: FastaScope }
   /* run ----------------------------------------------------------------- */
-  | { type: 'diagnosisStarted'; continuing: boolean; runToken: string; startedAt: number }
+  | {
+      type: 'diagnosisStarted';
+      continuing: boolean;
+      runToken: string;
+      startedAt: number;
+      inputKey: string;
+    }
   | { type: 'diagnosisProgress'; progress: DiagnosisProgress }
-  | { type: 'diagnosisSucceeded'; result: ProjectDiagnosisResult }
-  | { type: 'diagnosisFailed'; error: BackendError }
+  | { type: 'diagnosisStopRequested'; runToken: string }
+  | { type: 'diagnosisStopFailed'; runToken: string }
+  | { type: 'diagnosisSucceeded'; runToken: string; result: ProjectDiagnosisResult }
+  | { type: 'diagnosisFailed'; runToken: string; error: BackendError }
   | { type: 'dismissContinuation' }
   | { type: 'clearDiagnosisRun' }
   /* notices and project lifecycle --------------------------------------- */
@@ -448,6 +472,31 @@ export function scopeFileIds(state: AppState): readonly string[] {
   const scope = state.fastaScope;
   if (scope.kind === 'all') return all;
   return all.filter((id) => id === scope.fastaFileId);
+}
+
+/**
+ * Everything a continued DMC search depends on, as one comparable string.
+ *
+ * Mirrors the backend's `analysis_fingerprint`: the SAVED focal and comparison
+ * membership of the active set, the files in scope, single-file vs pooled,
+ * Ignore Gaps, benefit of the doubt and the minimum candidate size. The
+ * maximum size is deliberately left out — raising it is what Continue is for.
+ * The backend refuses a mismatched continuation regardless; this is what lets
+ * the UI stop offering one.
+ */
+export function runInputKey(state: AppState): string {
+  const draft = activeDraft(state);
+  const config = state.molecularDiagnosis;
+  return JSON.stringify({
+    focalSetId: draft.persistedId,
+    focal: draft.savedHeaders,
+    comparison: draft.savedComparison,
+    files: scopeFileIds(state),
+    singleFile: state.fastaScope.kind === 'file',
+    ignoreGaps: config.ignoreGaps,
+    benefitOfDoubt: config.giveBenefitOfDoubtToAmbiguousBases,
+    minCandidateSize: config.minCandidateSize,
+  });
 }
 
 /** The selected file id, or null for the All-files scope. */
@@ -827,6 +876,8 @@ export function appReducer(state: AppState, action: AppAction): AppState {
           runToken: action.runToken,
           startedAt: action.startedAt,
           progress: null,
+          stopping: false,
+          inputKey: action.inputKey,
         },
       };
 
@@ -845,18 +896,52 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, diagnosisRun: { ...run, progress: action.progress } };
     }
 
-    case 'diagnosisSucceeded':
+    case 'diagnosisStopRequested': {
+      // Only the run in flight, and only once: a second click changes nothing.
+      const run = state.diagnosisRun;
+      if (run.status !== 'running' || run.runToken !== action.runToken || run.stopping) {
+        return state;
+      }
+      return { ...state, diagnosisRun: { ...run, stopping: true } };
+    }
+
+    case 'diagnosisStopFailed': {
+      // The request never reached a backend; the run is still going.
+      const run = state.diagnosisRun;
+      if (run.status !== 'running' || run.runToken !== action.runToken) return state;
+      return { ...state, diagnosisRun: { ...run, stopping: false } };
+    }
+
+    /*
+     * A run's ending applies only to THAT run, by the same token rule as its
+     * progress. Without it, the late answer of a stopped run could overwrite a
+     * run started after it.
+     */
+    case 'diagnosisSucceeded': {
+      const run = state.diagnosisRun;
+      if (run.status !== 'running' || run.runToken !== action.runToken) return state;
       return {
         ...state,
         diagnosisRun: {
           status: 'succeeded',
           result: action.result,
           pendingContinuation: action.result.canContinue ? action.result.resume : null,
+          inputKey: run.inputKey,
         },
       };
+    }
 
-    case 'diagnosisFailed':
-      return { ...state, diagnosisRun: { status: 'failed', error: action.error } };
+    case 'diagnosisFailed': {
+      const run = state.diagnosisRun;
+      if (run.status !== 'running' || run.runToken !== action.runToken) return state;
+      return {
+        ...state,
+        diagnosisRun:
+          action.error.code === 'RUN_CANCELLED'
+            ? { status: 'cancelled' }
+            : { status: 'failed', error: action.error },
+      };
+    }
 
     case 'dismissContinuation':
       return state.diagnosisRun.status === 'succeeded'

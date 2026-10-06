@@ -1460,3 +1460,38 @@ An optional list of exact headers saved WITH a focal set (no separate library).
   entries. Tests: `tests/test_comparison_set.py`,
   `desktop/src/app/state/comparisonSet.test.ts`, `desktop/src/app/comparisonSet.test.tsx`.
 
+
+---
+
+## 18. STOPPING A RUN, AND SAFE CONTINUATION
+
+* **Stop is cooperative and out of band.** `service/__main__.py` reads stdin on
+  a reader thread. `control.cancelRun {runToken}` is answered by that thread
+  immediately (`OUT_OF_BAND_METHODS`) and only marks the token in
+  `diagnostics.CANCELLATIONS`; every other request still goes through the one
+  sequential loop. The running `RunDiagnostics` raises `progress.RunCancelled`
+  at its next checkpoint: a stage boundary, or a `ProgressTicker` clock check
+  (every 2048 DMC / 256 five-site combinations, so no per-iteration cost). The
+  handler reports it as `RUN_CANCELLED` ("Analysis stopped."), never as a
+  failure. No child process is killed; the project stays open.
+* **Outputs are never interrupted.** From the `finishing` stage on, stops are
+  deferred; if one arrived, `ProjectService.run_molecular_diagnosis` deletes the
+  files that run just wrote and raises `RunCancelled`. A cancelled run leaves no
+  report, workbook or consensus file.
+* **Renderer:** `diagnosisRun.running.stopping` drives "Stop analysis" ->
+  "Stopping…"; the run stays `running` until the backend answers, then becomes
+  `{status: 'cancelled'}`. Results, failures and progress apply only to the run
+  whose `runToken` they carry. `PythonBridge.call(..., {startIfStopped: false})`
+  keeps Stop from spawning a backend.
+* **Continuation is bound to its inputs.** A project run's `resume` carries
+  `inputsFingerprint` (`ProjectService.analysis_fingerprint`: focal and
+  comparison membership, file ids + verified SHA-256, single-file flag, Ignore
+  Gaps, BOTD, minimum size; NOT the maximum). A mismatched or missing
+  fingerprint is refused with `RESUME_INPUTS_CHANGED`. The renderer compares
+  `runInputKey(state)` with the key stored on the run and withdraws Continue
+  when they differ. The legacy non-project `runMolecularDiagnosis` method is
+  unchanged.
+* **Layout:** `.diagnosis__left` is shifted left by `--shift-left-panel` (26px)
+  with `scrollbar-gutter: stable`, so the whole column clears the scrollbar.
+* Tests: `tests/test_run_cancellation.py` (including a real subprocess Stop),
+  `desktop/src/app/state/runControl.test.ts`, `desktop/src/app/runStop.test.tsx`.

@@ -28,6 +28,7 @@ import os
 import platform
 import sqlite3
 import sys
+import threading
 import time
 import traceback
 import uuid
@@ -36,10 +37,12 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from molecular_diagnosis.progress import RunObserver, describe_path
+from molecular_diagnosis.progress import RunCancelled, RunObserver, describe_path
 
 __all__ = [
+    "CANCELLATIONS",
     "CHANNEL",
+    "CancellationRegistry",
     "ProgressChannel",
     "RunDiagnostics",
     # Re-exported: it lives in the observation layer so modules below the
@@ -203,6 +206,54 @@ CHANNEL = ProgressChannel()
 # ---------------------------------------------------------------------------
 
 
+class CancellationRegistry:
+    """
+    Run tokens the user has asked to stop.
+
+    Written by the stdin reader thread (see `service.__main__`), which handles
+    `control.cancelRun` the moment it arrives instead of queueing it behind the
+    run it is meant to stop. Read by the run's observer at its checkpoints.
+
+    A token may be marked before its run has even started — the run request
+    can still be queued — so the registry accepts tokens it has not seen. It is
+    bounded so cancels for runs that already finished cannot accumulate.
+    """
+
+    LIMIT = 256
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._tokens: dict[str, None] = {}
+
+    def request(self, token: str) -> None:
+        with self._lock:
+            self._tokens[token] = None
+            while len(self._tokens) > self.LIMIT:
+                self._tokens.pop(next(iter(self._tokens)))
+
+    def is_requested(self, token: str | None) -> bool:
+        # A plain dict membership test: safe without the lock under the GIL,
+        # and this is the call that sits on the checkpoint path.
+        return token is not None and token in self._tokens
+
+    def discard(self, token: str | None) -> None:
+        if token is None:
+            return
+        with self._lock:
+            self._tokens.pop(token, None)
+
+
+#: Process-wide registry. Written out of band, read by running observers.
+CANCELLATIONS = CancellationRegistry()
+
+#: The first stage that writes output files. From here on a stop request is
+#: DEFERRED rather than acted on: interrupting openpyxl or a half-written
+#: report would leave files that look like results. The caller deletes this
+#: run's outputs instead once the pipeline returns (see
+#: `ProjectService.run_molecular_diagnosis`).
+_FIRST_OUTPUT_STAGE = "finishing"
+
+
 class RunDiagnostics(RunObserver):
     """
     One analysis run's diagnostics and progress.
@@ -223,9 +274,13 @@ class RunDiagnostics(RunObserver):
         run_token: str | None = None,
         channel: ProgressChannel | None = None,
         log: Callable[..., None] = log_line,
+        cancellations: CancellationRegistry | None = None,
     ) -> None:
         self.run_id = run_id
         self.run_token = run_token
+        self._cancellations = cancellations
+        #: Set once output files start being written; checkpoints stop acting.
+        self._writing_outputs = False
         self.started = time.monotonic()
         self.last_stage: str = "starting"
         self._channel = channel if channel is not None else CHANNEL
@@ -253,8 +308,27 @@ class RunDiagnostics(RunObserver):
     def event(self, name: str, /, **fields: Any) -> None:
         self._emit(name, **fields)
 
+    # -- cancellation ----------------------------------------------------
+
+    @property
+    def cancel_requested(self) -> bool:
+        return self._cancellations is not None and self._cancellations.is_requested(
+            self.run_token
+        )
+
+    def checkpoint(self) -> None:
+        if self._writing_outputs or not self.cancel_requested:
+            return
+        self._emit("run.cancel.honoured")
+        raise RunCancelled()
+
     @contextmanager
     def stage(self, name: str, /, **fields: Any) -> Iterator[None]:
+        # A stage boundary is a checkpoint. The first output stage is the last
+        # one at which a stop is acted on; after it, stops are deferred.
+        self.checkpoint()
+        if name == _FIRST_OUTPUT_STAGE:
+            self._writing_outputs = True
         previous = self.last_stage
         self.last_stage = name
         self._stack.append(name)
@@ -263,6 +337,14 @@ class RunDiagnostics(RunObserver):
         failed = False
         try:
             yield
+        except RunCancelled:
+            # Not a failure: reported once, by the service boundary.
+            failed = True
+            self._emit(
+                f"stage.cancelled:{name}",
+                durationMs=int((time.monotonic() - started) * 1000),
+            )
+            raise
         except Exception as error:  # noqa: BLE001 - re-raised after reporting
             failed = True
             self._emit(

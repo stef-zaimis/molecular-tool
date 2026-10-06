@@ -268,6 +268,21 @@ function registerIpc(): void {
   ipcMain.handle('project:remove-focal-entries', forward('project.removeFocalEntries'));
   ipcMain.handle('project:focal-presence', forward('project.focalPresence'));
   ipcMain.handle('project:run-molecular-diagnosis', forward('project.runMolecularDiagnosis'));
+  /*
+   * Stop. Written straight to the running child, whose stdin reader answers it
+   * out of band while the run is still busy. Never STARTS a backend: with no
+   * child running there is no run to stop.
+   */
+  ipcMain.handle('project:cancel-diagnosis', async (_event, params: unknown) => {
+    const runToken = (params as { runToken?: unknown } | null)?.runToken;
+    if (typeof runToken !== 'string' || !runToken) {
+      return {
+        ok: false as const,
+        error: { code: 'INVALID_PARAMETER', message: 'A run token is required to stop a run.' },
+      };
+    }
+    return getBackend().call('control.cancelRun', { runToken }, { startIfStopped: false });
+  });
 
   /** Choose a directory to hold a project. */
   ipcMain.handle('dialog:select-project-directory', async () => {

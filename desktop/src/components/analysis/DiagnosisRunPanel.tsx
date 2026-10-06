@@ -98,7 +98,15 @@ interface DiagnosisRunPanelProps {
    */
   readonly gate: RunGate;
   readonly onRun: () => void;
+  /** Ask the run in flight to stop. */
+  readonly onStop: () => void;
   readonly onContinue: (resume: DiagnosisResumeState) => void;
+  /**
+   * Whether the offered continuation was produced by the CURRENT inputs.
+   * When they have changed, Continue is withdrawn rather than offered: it
+   * would reuse combinations tested against different sequences or options.
+   */
+  readonly continuationCurrent: boolean;
   readonly onDismissContinuation: () => void;
   readonly onReveal: (filePath: string) => void;
 }
@@ -123,11 +131,14 @@ export function DiagnosisRunPanel({
   run,
   gate,
   onRun,
+  onStop,
   onContinue,
+  continuationCurrent,
   onDismissContinuation,
   onReveal,
 }: DiagnosisRunPanelProps): JSX.Element {
   const running = run.status === 'running';
+  const stopping = run.status === 'running' && run.stopping;
   const canRun = gate.canRun;
   const blockedReason = gate.reason ?? undefined;
   const elapsed = useElapsed(run.status === 'running' ? run.startedAt : null);
@@ -145,6 +156,22 @@ export function DiagnosisRunPanel({
           {running ? 'Running...' : 'Run Molecular Diagnosis'}
         </button>
 
+        {/*
+          Stop exists only while a run does. It stays visible but disabled once
+          pressed, reading "Stopping…", until the backend confirms: the run is
+          not over until then, and a second request would be meaningless.
+        */}
+        {running && (
+          <button
+            type="button"
+            className="run-panel__stop"
+            onClick={onStop}
+            disabled={stopping}
+          >
+            {stopping ? 'Stopping…' : 'Stop analysis'}
+          </button>
+        )}
+
         {run.status === 'running' && (
           /*
            * The one live line. It says the same three things throughout —
@@ -153,7 +180,7 @@ export function DiagnosisRunPanel({
            */
           <span className="run-panel__status run-panel__status--running" role="status">
             <span className="run-panel__progress-state">
-              {run.continuing ? 'Continuing' : 'Running'}
+              {run.stopping ? 'Stopping' : run.continuing ? 'Continuing' : 'Running'}
             </span>
             <span className="run-panel__progress-stage">{describeProgress(run.progress)}</span>
             <span className="run-panel__progress-clock">{formatElapsed(elapsed)}</span>
@@ -175,6 +202,13 @@ export function DiagnosisRunPanel({
           </span>
         )}
       </div>
+
+      {run.status === 'cancelled' && (
+        <div className="run-panel__result" role="status">
+          <p className="run-panel__headline">Analysis stopped.</p>
+          <p className="run-panel__detail">No results were kept from the stopped run.</p>
+        </div>
+      )}
 
       {run.status === 'failed' && (
         <div className="run-panel__result run-panel__result--error" role="alert">
@@ -211,7 +245,14 @@ export function DiagnosisRunPanel({
               ))}
           </ul>
 
-          {run.pendingContinuation && (
+          {run.pendingContinuation && !continuationCurrent && (
+            <p className="run-panel__hint">
+              The focal set, comparison set, FASTA pool or search options have changed since this
+              search stopped, so it can no longer be continued. Run the analysis again instead.
+            </p>
+          )}
+
+          {run.pendingContinuation && continuationCurrent && (
             <div className="run-panel__continuation">
               <p className="run-panel__detail">
                 The search reached the maximum candidate size ({run.result.dmc.maxCombinationLength})

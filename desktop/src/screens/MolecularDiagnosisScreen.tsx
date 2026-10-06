@@ -159,6 +159,8 @@ export function MolecularDiagnosisScreen(): JSX.Element {
     removeByQuery,
     runGate,
     runDiagnosis,
+    stopDiagnosis,
+    continuationCurrent,
   } = useProject();
 
   const config = state.molecularDiagnosis;
@@ -643,7 +645,9 @@ export function MolecularDiagnosisScreen(): JSX.Element {
           run={state.diagnosisRun}
           gate={runGate}
           onRun={() => void runDiagnosis(null)}
+          onStop={() => void stopDiagnosis()}
           onContinue={(resume) => void runDiagnosis(resume)}
+          continuationCurrent={continuationCurrent}
           onDismissContinuation={() => dispatch({ type: 'dismissContinuation' })}
           onReveal={(filePath) => void desktop().shell.showItemInFolder(filePath)}
         />

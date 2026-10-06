@@ -240,6 +240,13 @@
   --inset-workspace-top: 67px;
   --inset-workspace-bottom: 68px;
   --w-left-panel: 1049px;
+  /*
+   * How far the Molecular Diagnosis controls sit left of their measured x, so
+   * the rightmost control (the STRING help dot, measured to 1047) ends 10px
+   * before the left pane's 18px scrollbar gutter: 1047 - 26 = 1021 = 1049 - 18 - 10.
+   * One value for the whole column; see `.diagnosis__left`.
+   */
+  --shift-left-panel: 26px;
 
   --z-tooltip: 100;
 }

@@ -8,6 +8,8 @@ call methods here; they never touch SQL, the filesystem, or the cache.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -33,6 +35,7 @@ from molecular_diagnosis.project.search import resolve_headers, search_headers
 from molecular_diagnosis.project.sources import SourceState, SourceStatus, SourceVerifier, hash_file
 from molecular_diagnosis.progress import (
     NULL_OBSERVER,
+    RunCancelled,
     STAGE_LOADING_ALIGNMENT,
     STAGE_VALIDATING_FOCAL,
     STAGE_VERIFYING_SOURCES,
@@ -1362,6 +1365,47 @@ class ProjectService:
         self._require_focal_set(set_id)
         return self.repository.list_comparison_headers(set_id)
 
+    def analysis_fingerprint(
+        self,
+        *,
+        selector: ExactHeaders,
+        comparison: Sequence[str],
+        fasta_file_ids: Sequence[str],
+        single_file: bool,
+        options: dict[str, object],
+    ) -> str:
+        """
+        A digest of everything a DMC search's tested combinations depend on.
+
+        A continuation reuses the previous search's diagnostic combinations and
+        tested counts. That is only sound against the SAME inputs, so the resume
+        state carries this digest and a continuation is refused if it differs:
+
+        * focal membership (exact headers, in order) and the comparison set;
+        * which files, in which order, and the content each one was read with
+          (its verified SHA-256), so an edited FASTA cannot be continued into;
+        * single-file vs. pooled scope;
+        * Ignore Gaps, benefit of the doubt, and the minimum candidate size.
+
+        The MAXIMUM size is deliberately absent: raising it is the whole point
+        of continuing.
+        """
+        files = []
+        for file_id in fasta_file_ids:
+            row = self.repository.get_fasta_file(file_id)
+            files.append([file_id, row.indexed_sha256 if row is not None else None])
+        material = {
+            "focal": list(selector),
+            "comparison": list(comparison),
+            "files": files,
+            "singleFile": bool(single_file),
+            "ignoreGaps": bool(options.get("ignoreGaps", False)),
+            "benefitOfDoubt": bool(options.get("giveBenefitOfDoubtToAmbiguousBases", False)),
+            "minCandidateSize": int(options.get("minCandidateSize", 1)),
+        }
+        encoded = json.dumps(material, sort_keys=True, ensure_ascii=False).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
     @staticmethod
     def require_no_overlap(selector: ExactHeaders, comparison: Sequence[str]) -> None:
         """
@@ -1541,7 +1585,26 @@ class ProjectService:
                 "Every sequence in the selected scope is focal, so there is no contrast set.",
             )
 
+        fingerprint = self.analysis_fingerprint(
+            selector=selector,
+            comparison=comparison,
+            fasta_file_ids=fasta_file_ids,
+            single_file=single_file,
+            options=options,
+        )
         parsed_resume = resume_state_from_payload(resume)
+        if parsed_resume is not None and (
+            not isinstance(resume, dict) or resume.get("inputsFingerprint") != fingerprint
+        ):
+            # Reusing tested combinations against different inputs would
+            # report "diagnostic" combinations nobody tested on these
+            # sequences. The renderer hides Continue in this case too; this is
+            # the guarantee.
+            raise ProjectError(
+                "RESUME_INPUTS_CHANGED",
+                "The analysis inputs changed since this search stopped, so it cannot be "
+                "continued. Run the analysis again from the start.",
+            )
         if parsed_resume is None:
             start_length, initial_combos, initial_tested = 1, None, None
         else:
@@ -1570,12 +1633,30 @@ class ProjectService:
             initial_diagnostic_combinations=initial_combos,
             initial_combinations_tested_by_length=initial_tested,
             comparison_summary=(
-                f"explicit, {len(non_focal_headers)} selected specimen(s) "
-                f"out of {len(scope.sequences)} sequences in the selected FASTA scope"
+                f"explicit, {len(non_focal_headers)} selected specimen(s); other non-focal "
+                "sequences in the selected FASTA scope were not analysed"
                 if comparison
                 else None
             ),
+            sequences_read=len(scope.sequences) if comparison else None,
         )
+
+        if observer.cancel_requested:
+            # Stop arrived while outputs were being written, when stopping is
+            # deferred so no file is left half-written. The run is still a
+            # cancelled run: its outputs must not survive to look like results.
+            # These are exactly the paths this run allocated, all new files.
+            for path in (
+                result.txt_output_path,
+                result.xlsx_output_path,
+                result.consensus_txt_output_path,
+            ):
+                if path is not None:
+                    try:
+                        Path(path).unlink(missing_ok=True)
+                    except OSError as error:
+                        observer.event("run.cancel.cleanup_failed", path=str(path), error=str(error))
+            raise RunCancelled()
 
         dmc = result.dmc
         observer.event(
@@ -1609,11 +1690,15 @@ class ProjectService:
             "dmc": _dmc_to_payload(dmc),
             "canContinue": can_continue,
             "resume": (
-                resume_state_to_payload(
-                    stopped_at_length=dmc.stopped_at_length,
-                    diagnostic_combinations=dmc.diagnostic_combinations,
-                    combinations_tested_by_length=dmc.combinations_tested_by_length,
-                )
+                {
+                    **resume_state_to_payload(
+                        stopped_at_length=dmc.stopped_at_length,
+                        diagnostic_combinations=dmc.diagnostic_combinations,
+                        combinations_tested_by_length=dmc.combinations_tested_by_length,
+                    ),
+                    # Binds this state to the inputs that produced it.
+                    "inputsFingerprint": fingerprint,
+                }
                 if can_continue
                 else None
             ),

@@ -163,6 +163,7 @@ def run_pipeline_on_sequences(
     initial_combinations_tested_by_length: dict[int, int] | None = None,
     observer: RunObserver = NULL_OBSERVER,
     comparison_summary: str | None = None,
+    sequences_read: int | None = None,
 ) -> PipelineResult:
     """
     The pipeline body, over sequences that are ALREADY parsed and verified.
@@ -181,6 +182,8 @@ def run_pipeline_on_sequences(
     `comparison_summary` is report text only. A caller that narrowed
     `sequences` to an explicit comparison set passes a sentence saying so;
     `None` (every existing caller) writes the report exactly as before.
+    `sequences_read`, likewise report-only, is the size of the scope before
+    that narrowing.
     """
     output_dir = Path(output_dir)
     ref_id = focal_headers[0]
@@ -275,6 +278,7 @@ def run_pipeline_on_sequences(
             five_site_result=five_site_result,
             punishment_result=None,
             comparison_summary=comparison_summary,
+            sequences_read=sequences_read,
         )
 
     with observer.stage(STAGE_WRITING_CONSENSUS, path=str(consensus_txt_output_path)):

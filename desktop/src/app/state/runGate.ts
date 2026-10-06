@@ -107,11 +107,16 @@ export function evaluateRunGate({
     };
   }
 
+  // One wording for both sets once a comparison list exists, so a wait caused
+  // by a comparison entry is not blamed on the focal set.
+  const entries =
+    normaliseHeaders(draft.comparison).length > 0 ? 'focal and comparison entries' : 'focal entries';
+
   if (presence.status === 'failed') {
-    return { canRun: false, reason: 'The focal entries could not be checked against the FASTA files.' };
+    return { canRun: false, reason: `The ${entries} could not be checked against the FASTA files.` };
   }
   if (presence.status !== 'loaded') {
-    return { canRun: false, reason: 'Checking where the focal entries are...' };
+    return { canRun: false, reason: `Checking where the ${entries} are...` };
   }
 
   const verdicts: (HeaderPresencePayload | undefined)[] = headers.map(
@@ -124,7 +129,7 @@ export function evaluateRunGate({
   ).map((header) => presence.byHeader[header]);
 
   if ([...verdicts, ...comparisonVerdicts].some((verdict) => verdict === undefined)) {
-    return { canRun: false, reason: 'Checking where the focal entries are...' };
+    return { canRun: false, reason: `Checking where the ${entries} are...` };
   }
 
   /*

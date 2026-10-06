@@ -272,7 +272,21 @@ export class PythonBridge {
    * `{ ok: false, error }` so callers handle them as data rather than as
    * exceptions. It only rejects if the child cannot be started at all.
    */
-  async call<T = unknown>(method: string, params: Record<string, unknown>): Promise<BackendResult<T>> {
+  async call<T = unknown>(
+    method: string,
+    params: Record<string, unknown>,
+    /**
+     * `startIfStopped: false` is for control messages such as Stop: spawning a
+     * fresh backend just to tell it to stop a run it never had is pointless.
+     */
+    { startIfStopped = true }: { startIfStopped?: boolean } = {},
+  ): Promise<BackendResult<T>> {
+    if (!startIfStopped && !this.child) {
+      return {
+        ok: false,
+        error: { code: 'BACKEND_UNAVAILABLE', message: 'The analysis backend is not running.' },
+      };
+    }
     try {
       await this.start();
     } catch (error) {

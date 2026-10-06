@@ -129,6 +129,8 @@ def test_blank_comparison_report_has_no_comparison_line(project, tmp_path):
     result = run(project, set_id, [file_id])
     report = open(result["outputs"]["reportTxt"], encoding="utf-8").read()
     assert "Comparison set:" not in report
+    assert "Sequences analysed" not in report
+    assert "Total sequences read: 6" + "\n" in report
     assert "Non-focal sequences: 4" in report
 
 
@@ -219,10 +221,12 @@ def test_explicit_comparison_is_described_in_the_report(project, tmp_path):
     file_id = link(project, tmp_path, "a.fasta")
     set_id = save(project, comparison=["C1_other", "C2_other"])["id"]
     report = open(run(project, set_id, [file_id])["outputs"]["reportTxt"], encoding="utf-8").read()
+    assert "Total sequences read: 6" + "\n" in report
+    assert "Sequences analysed (focal + comparison set): 4" + "\n" in report
     assert "Non-focal sequences: 2" in report
     assert (
-        "Comparison set: explicit, 2 selected specimen(s) out of 6 sequences in the "
-        "selected FASTA scope" in report
+        "Comparison set: explicit, 2 selected specimen(s); other non-focal sequences in the "
+        "selected FASTA scope were not analysed" in report
     )
 
 

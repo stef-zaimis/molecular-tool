@@ -303,7 +303,11 @@ describe('the run gate with a comparison set', () => {
   it('waits while comparison presence has not been answered', () => {
     const verdict = gate(draftFromPayload(WITH_COMPARISON), GREEN_FOCAL);
     expect(verdict.canRun).toBe(false);
-    expect(verdict.reason).toMatch(/Checking/);
+    expect(verdict.reason).toBe('Checking where the focal and comparison entries are...');
+    // Without a comparison list the wording is what it always was.
+    expect(gate(draftFromPayload(OLD_SET), { focal_1: 'present_current' }).reason).toBe(
+      'Checking where the focal entries are...',
+    );
   });
 
   it('still reports focal problems first', () => {

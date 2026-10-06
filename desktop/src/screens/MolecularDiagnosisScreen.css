@@ -36,8 +36,26 @@
 .diagnosis__left {
   position: relative;
   z-index: 1;
-  flex: 0 0 var(--w-left-panel);
-  width: var(--w-left-panel);
+  /*
+   * The whole control composition sits `--shift-left-panel` further left than
+   * the measured design, by moving the scroll container's LEFT edge out past
+   * the window (`.diagnosis` clips it) while its RIGHT edge, and so the
+   * scrollbar and the viewer rail, stay at x 1049.
+   *
+   * Why: once the Comparison Set made this column scroll, the 18px scrollbar
+   * took the last 18px of the pane, and the STRING rows' help dots (measured to
+   * end at 1047) were cut in half. Shifting the container moves every row,
+   * label, editor, parameter and the run panel together, so their alignment
+   * with each other is exactly the design's; nothing is offset one-by-one.
+   */
+  margin-left: calc(-1 * var(--shift-left-panel));
+  flex: 0 0 calc(var(--w-left-panel) + var(--shift-left-panel));
+  width: calc(var(--w-left-panel) + var(--shift-left-panel));
+  /*
+   * The gutter is reserved whether or not the column currently scrolls, so the
+   * layout does not change when a result panel makes it start scrolling.
+   */
+  scrollbar-gutter: stable;
   min-width: 0;
   min-height: 0;
   display: flex;
@@ -52,11 +70,9 @@
   /*
    * PADDING, not a border, on the right.
    *
-   * Both inset the content by 10px, but a border also pulls the CLIP edge in,
-   * and the STRING row's help dot has to reach 1047 — six pixels past Enter and
-   * one before the viewer's rail. With padding the row may overhang into that
-   * last 10px and still be painted, because `overflow: hidden` clips at the
-   * padding box.
+   * Both inset the content by 10px, but a border also pulls the CLIP edge in.
+   * With the shift above, the STRING row's help dot ends at 1021: inside the
+   * content box, and 10px clear of the 18px scrollbar gutter (1031..1049).
    */
   padding-right: 10px;
 }

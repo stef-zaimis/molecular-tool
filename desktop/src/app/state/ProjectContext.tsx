@@ -12,6 +12,7 @@ import {
   activeDraft as selectActiveDraft,
   appReducer,
   createInitialState,
+  runInputKey,
   scopeFileIds,
   selectedFileId,
 } from './projectState';
@@ -79,6 +80,14 @@ interface ProjectContextValue {
   readonly runGate: RunGate;
   /** Run, or continue, Molecular Diagnosis over the project scope. */
   readonly runDiagnosis: (resume?: DiagnosisResumeState | null) => Promise<void>;
+  /** Ask the run in flight to stop. A second request while stopping is ignored. */
+  readonly stopDiagnosis: () => Promise<void>;
+  /**
+   * Whether the offered continuation still belongs to the current inputs.
+   * False once the focal set, comparison set, scope or a search option that
+   * shapes the search has changed since the run that produced it.
+   */
+  readonly continuationCurrent: boolean;
 
   /* ---- persistent project ------------------------------------------ */
 
@@ -724,6 +733,11 @@ export function ProjectProvider({ children }: { children: ReactNode }): JSX.Elem
     });
   }, []);
 
+  /* The inputs a continuation is bound to; see `runInputKey`. */
+  const inputKey = useMemo(() => runInputKey(state), [state]);
+  const continuationCurrent =
+    state.diagnosisRun.status === 'succeeded' && state.diagnosisRun.inputKey === inputKey;
+
   const runDiagnosis = useCallback(
     async (resume: DiagnosisResumeState | null = null) => {
       /*
@@ -738,6 +752,21 @@ export function ProjectProvider({ children }: { children: ReactNode }): JSX.Elem
        */
       if (!runGate.canRun) {
         if (runGate.reason) dispatch({ type: 'showNotice', message: runGate.reason });
+        return;
+      }
+
+      /*
+       * A continuation reuses combinations tested against the inputs of the
+       * run that produced it. Against anything else it would be wrong, so it
+       * is refused here (the panel has stopped offering it) and again by the
+       * backend, which checks a fingerprint of the real inputs.
+       */
+      if (resume !== null && !continuationCurrent) {
+        dispatch({
+          type: 'showNotice',
+          message:
+            'The analysis inputs changed since that search stopped, so it cannot be continued. Run it again instead.',
+        });
         return;
       }
 
@@ -769,6 +798,7 @@ export function ProjectProvider({ children }: { children: ReactNode }): JSX.Elem
         continuing: resume !== null,
         runToken,
         startedAt: Date.now(),
+        inputKey,
       });
 
       const response = await desktop().project.runMolecularDiagnosis({
@@ -785,20 +815,40 @@ export function ProjectProvider({ children }: { children: ReactNode }): JSX.Elem
         resume,
       });
 
+      // Tagged with the token: the reducer applies it only to this run.
       if (response.ok) {
-        dispatch({ type: 'diagnosisSucceeded', result: response.result });
+        dispatch({ type: 'diagnosisSucceeded', runToken, result: response.result });
       } else {
-        dispatch({ type: 'diagnosisFailed', error: response.error });
+        dispatch({ type: 'diagnosisFailed', runToken, error: response.error });
       }
     },
     [
       runGate,
+      continuationCurrent,
+      inputKey,
       activeDraft.persistedId,
       state.molecularDiagnosis,
       state.fastaScope.kind,
       scopeSourceIds,
     ],
   );
+
+  const stopDiagnosis = useCallback(async () => {
+    const run = state.diagnosisRun;
+    // One request per run: Stop is disabled while stopping, and this guard
+    // covers a double click that lands before the re-render.
+    if (run.status !== 'running' || run.stopping) return;
+    const { runToken } = run;
+    dispatch({ type: 'diagnosisStopRequested', runToken });
+
+    const response = await desktop().project.cancelDiagnosis(runToken);
+    if (!response.ok) {
+      dispatch({ type: 'diagnosisStopFailed', runToken });
+      dispatch({ type: 'showNotice', message: `The analysis could not be stopped: ${response.error.message}` });
+    }
+    // On success there is nothing more to do here: the run's own request now
+    // settles with RUN_CANCELLED, and that is what ends it.
+  }, [state.diagnosisRun]);
 
   const sourceViews = useMemo(
     () => describeSources(state.sources.items, state.sources.activity),
@@ -818,6 +868,8 @@ export function ProjectProvider({ children }: { children: ReactNode }): JSX.Elem
       scopeSourceIds,
       runGate,
       runDiagnosis,
+      stopDiagnosis,
+      continuationCurrent,
       sourceViews,
       sourceBanner: sourceBannerMessage(sourceViews),
       openProject,
@@ -843,6 +895,8 @@ export function ProjectProvider({ children }: { children: ReactNode }): JSX.Elem
       scopeSourceIds,
       runGate,
       runDiagnosis,
+      stopDiagnosis,
+      continuationCurrent,
       sourceViews,
       openProject,
       createProject,

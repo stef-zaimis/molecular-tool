@@ -28,6 +28,7 @@ def write_text_report(
     five_site_result: FiveSiteResult,
     punishment_result: PunishmentResult | None = None,
     comparison_summary: str | None = None,
+    sequences_read: int | None = None,
 ) -> None:
     output_path = Path(output_path)
     sites = dmc.unique
@@ -51,7 +52,13 @@ def write_text_report(
         file.write(f"Search started at combination length: {dmc.start_combination_length}\n\n")
 
         file.write("Sequence summary:\n")
-        file.write(f"Total sequences read: {len(sequences)}\n")
+        if sequences_read is None:
+            file.write(f"Total sequences read: {len(sequences)}\n")
+        else:
+            # Explicit comparison set: `sequences` is only what was analysed,
+            # so the scope's own count is reported as what was read.
+            file.write(f"Total sequences read: {sequences_read}\n")
+            file.write(f"Sequences analysed (focal + comparison set): {len(sequences)}\n")
         file.write(f"Alignment length: {alignment_length}\n")
         file.write(f"Focal sequences: {len(focal_headers)}\n")
         file.write(f"Non-focal sequences: {len(non_focal_headers)}\n")

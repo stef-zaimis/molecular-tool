@@ -324,6 +324,18 @@ const desktopApi = {
       ipcRenderer.invoke('project:run-molecular-diagnosis', request),
 
     /**
+     * Ask the run with this token to stop.
+     *
+     * Resolves as soon as the backend has RECORDED the request — the run itself
+     * then stops at its next checkpoint and its own promise above settles with
+     * `RUN_CANCELLED`. Harmless for a run that already finished.
+     */
+    cancelDiagnosis: (
+      runToken: string,
+    ): Promise<BackendResult<{ runToken: string; cancelRequested: boolean }>> =>
+      ipcRenderer.invoke('project:cancel-diagnosis', { runToken }),
+
+    /**
      * Live progress from a run that is still going.
      *
      * A separate event, not a resolution of the request above: the run's

@@ -19,6 +19,12 @@ Three rules keep this honest:
    millions of iterations. `ProgressTicker` reports on a wall-clock interval,
    and only checks the clock every few thousand iterations, so the cost of
    being observable stays in the noise.
+
+Cancellation rides on the same throttled points. `RunObserver.checkpoint()` is
+called where the ticker already looks at the clock and at every stage
+boundary; an observer that has been asked to stop raises `RunCancelled` there.
+That aborts the work, it never alters it: a run either finishes with exactly
+the results it always produced, or it produces none.
 """
 
 from __future__ import annotations
@@ -31,6 +37,7 @@ from typing import Any, Iterator
 
 __all__ = [
     "NULL_OBSERVER",
+    "RunCancelled",
     "describe_path",
     "PROGRESS_STAGES",
     "ProgressTicker",
@@ -88,6 +95,18 @@ PROGRESS_STAGES: tuple[str, ...] = (
 )
 
 
+class RunCancelled(Exception):
+    """
+    The user asked for this run to stop, and it stopped at a checkpoint.
+
+    An `Exception` (not a `BaseException`) on purpose: every
+    `except Exception: rollback(); raise` in the project layer must still roll
+    back when a run is cancelled inside it. Nothing in the scientific modules
+    catches broadly, so it travels straight out to the service boundary, which
+    reports it as `RUN_CANCELLED` rather than as a failure.
+    """
+
+
 class RunObserver:
     """
     Somewhere for a long operation to say what it is doing.
@@ -126,6 +145,21 @@ class RunObserver:
         detail: str | None = None,
     ) -> None:
         """One live progress update. Must be cheap; may be dropped."""
+
+    # -- cancellation ---------------------------------------------------
+
+    def checkpoint(self) -> None:
+        """
+        A safe point to stop at. Raises `RunCancelled` if the run should stop.
+
+        Called at stage boundaries and where `ProgressTicker` checks the clock,
+        never per iteration. The base implementation never stops.
+        """
+
+    @property
+    def cancel_requested(self) -> bool:
+        """Whether a stop was asked for, even if no checkpoint has acted on it."""
+        return False
 
 
 NULL_OBSERVER = RunObserver()
@@ -184,6 +218,9 @@ class ProgressTicker:
         if self._count < self._next_check:
             return
         self._next_check = self._count + self._check_every
+        # The same throttled point the clock is read at: responsive enough to
+        # stop a search within a fraction of a second, and free otherwise.
+        self._observer.checkpoint()
         now = time.monotonic()
         if now - self._last_report < self._min_interval:
             return
